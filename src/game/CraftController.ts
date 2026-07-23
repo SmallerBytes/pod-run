@@ -1,0 +1,200 @@
+import * as THREE from 'three';
+import { CraftStats } from '../garage/Loadout';
+import { Track, wrap01 } from './TrackProgress';
+
+export interface ThrustInput {
+  left: number; // 0..1
+  right: number; // 0..1
+  overdrive: boolean;
+}
+
+export interface CollisionEvent {
+  side: -1 | 1;
+  impact: number; // 0..1 severity
+}
+
+const IDLE_FLOOR = 0.12;
+const OVERDRIVE_MAX = 4; // seconds of charge
+const OVERDRIVE_RECHARGE = 0.45; // charge per second
+const OVERDRIVE_HEAT = 0.22; // extra heat per second
+
+/**
+ * Player skiff simulation: differential thrust drives speed and yaw, heat caps
+ * power when abused, walls damage the hull and shove you back onto the track.
+ */
+export class CraftController {
+  position = new THREE.Vector3();
+  yaw = 0;
+  speed = 0;
+  yawRate = 0;
+
+  heat = 0;
+  hull: number;
+  stability = 1;
+  overdriveCharge = OVERDRIVE_MAX;
+  overdriveActive = false;
+
+  /** Smoothed effective thrust per side, for gauges/exhaust/audio. */
+  effLeft = 0;
+  effRight = 0;
+
+  trackT = 0;
+  inSoftSand = false;
+  limpMode = false;
+
+  private collisionShake = 0;
+  private onCollision: ((e: CollisionEvent) => void) | null = null;
+
+  constructor(public stats: CraftStats, private track: Track) {
+    this.hull = stats.hullMax;
+  }
+
+  setCollisionHandler(fn: (e: CollisionEvent) => void): void {
+    this.onCollision = fn;
+  }
+
+  reset(startT: number, lateralOffset = 0): void {
+    const p = this.track.posAt(startT);
+    const side = this.track.sideAt(startT);
+    this.position.copy(p).addScaledVector(side, lateralOffset);
+    const dir = this.track.tangentAt(startT);
+    this.yaw = Math.atan2(-dir.x, -dir.z);
+    this.speed = 0;
+    this.yawRate = 0;
+    this.heat = 0;
+    this.hull = this.stats.hullMax;
+    this.stability = 1;
+    this.overdriveCharge = OVERDRIVE_MAX;
+    this.trackT = startT;
+    this.limpMode = false;
+    this.effLeft = 0;
+    this.effRight = 0;
+  }
+
+  update(dt: number, input: ThrustInput, frozen = false): void {
+    const raw = frozen
+      ? { left: 0, right: 0, overdrive: false }
+      : input;
+
+    // response curve: deadzone + exponent so small squeezes don't twitch
+    const shape = (v: number) => {
+      const c = Math.max(0, Math.min(1, v));
+      const dz = c < 0.06 ? 0 : (c - 0.06) / 0.94;
+      return Math.max(IDLE_FLOOR * (frozen ? 0 : 1), Math.pow(dz, 1.35));
+    };
+    let inL = shape(raw.left);
+    let inR = shape(raw.right);
+
+    // overdrive
+    this.overdriveActive = false;
+    if (raw.overdrive && this.overdriveCharge > 0.15 && !this.limpMode && !frozen) {
+      this.overdriveActive = true;
+      this.overdriveCharge = Math.max(0, this.overdriveCharge - dt);
+    } else {
+      this.overdriveCharge = Math.min(OVERDRIVE_MAX, this.overdriveCharge + OVERDRIVE_RECHARGE * dt);
+    }
+
+    // heat model
+    const load = (inL * inL + inR * inR) / 2;
+    this.heat += (load * this.stats.heatRate + (this.overdriveActive ? OVERDRIVE_HEAT : 0)) * dt;
+    this.heat -= this.stats.coolRate * (1.2 - load) * dt;
+    this.heat = Math.max(0, Math.min(1, this.heat));
+
+    // overheating caps power; a wrecked hull limps
+    let powerCap = this.heat > 0.85 ? 1 - (this.heat - 0.85) * 4.5 : 1;
+    powerCap = Math.max(0.3, powerCap);
+    if (this.limpMode) powerCap = Math.min(powerCap, 0.25);
+
+    const odBoost = this.overdriveActive ? 1.28 : 1;
+    const effL = inL * powerCap;
+    const effR = inR * powerCap;
+    this.effLeft = THREE.MathUtils.lerp(this.effLeft, effL, 1 - Math.exp(-dt * 10));
+    this.effRight = THREE.MathUtils.lerp(this.effRight, effR, 1 - Math.exp(-dt * 10));
+
+    // longitudinal
+    const avg = (effL + effR) / 2;
+    const sandDrag = this.inSoftSand ? 0.55 : 1;
+    const targetSpeed = this.stats.topSpeed * avg * odBoost * sandDrag;
+    const accel = this.stats.accel * (this.overdriveActive ? 1.5 : 1);
+    if (this.speed < targetSpeed) {
+      this.speed = Math.min(targetSpeed, this.speed + accel * dt);
+    } else {
+      this.speed = Math.max(targetSpeed, this.speed - (accel * 0.9 + (this.inSoftSand ? 14 : 0)) * dt);
+    }
+
+    // yaw from differential thrust (works even when slow, stronger with speed)
+    const diff = effR - effL;
+    const speedFactor = 0.4 + 0.6 * Math.min(1, this.speed / this.stats.topSpeed);
+    const targetYawRate = -diff * this.stats.turnRate * speedFactor;
+    this.yawRate = THREE.MathUtils.lerp(this.yawRate, targetYawRate, 1 - Math.exp(-dt * 6));
+    this.yaw += this.yawRate * dt;
+
+    // integrate position
+    const forward = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
+    this.position.addScaledVector(forward, this.speed * dt);
+
+    // track query: hover height, sand, wall clamp
+    this.trackT = this.track.nearestT(this.position, this.trackT);
+    const center = this.track.posAt(this.trackT);
+    const sideVec = this.track.sideAt(this.trackT);
+    const hw = this.track.halfWidthAt(this.trackT);
+    const offset = this.position.clone().sub(center);
+    const lateral = offset.dot(sideVec);
+
+    this.inSoftSand = Math.abs(lateral) > hw * 0.72;
+
+    const margin = hw - 1.6;
+    if (Math.abs(lateral) > margin) {
+      const overshoot = Math.abs(lateral) - margin;
+      const sideSign = (lateral > 0 ? 1 : -1) as 1 | -1;
+      this.position.addScaledVector(sideVec, -sideSign * overshoot);
+      const impact = Math.min(1, (this.speed / this.stats.topSpeed) * (0.35 + overshoot * 0.4));
+      if (impact > 0.08 && this.collisionShake < 0.35) {
+        this.applyDamage(impact * 16);
+        this.speed *= 1 - impact * 0.5;
+        this.yawRate += sideSign * impact * 1.4;
+        this.collisionShake = 1;
+        this.onCollision?.({ side: sideSign, impact });
+      }
+    }
+    this.collisionShake = Math.max(0, this.collisionShake - dt * 2.2);
+
+    // hover height follows the canyon floor
+    this.position.y = center.y + 1.15;
+
+    // stability: heat + imbalance + recent hits
+    const imbalance = Math.abs(this.effRight - this.effLeft);
+    const targetStability = Math.max(
+      0,
+      1 - (this.heat * 0.55 + imbalance * 0.25 + this.collisionShake * 0.45)
+    );
+    this.stability = THREE.MathUtils.lerp(this.stability, targetStability, 1 - Math.exp(-dt * 4));
+  }
+
+  applyDamage(amount: number): void {
+    if (this.limpMode) return;
+    this.hull = Math.max(0, this.hull - amount);
+    if (this.hull <= 0) this.limpMode = true;
+  }
+
+  /** Push from another racer bumping us. */
+  shove(sideSign: -1 | 1, strength: number): void {
+    const sideVec = this.track.sideAt(this.trackT);
+    this.position.addScaledVector(sideVec, sideSign * strength);
+    this.yawRate += sideSign * strength * 0.5;
+    this.applyDamage(strength * 4);
+    this.onCollision?.({ side: sideSign, impact: Math.min(1, strength * 0.4) });
+  }
+
+  get overdriveFraction(): number {
+    return this.overdriveCharge / OVERDRIVE_MAX;
+  }
+
+  get hullFraction(): number {
+    return this.hull / this.stats.hullMax;
+  }
+
+  get lateralT(): number {
+    return wrap01(this.trackT);
+  }
+}

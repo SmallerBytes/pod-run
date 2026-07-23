@@ -1,0 +1,231 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #120d08;
+  color: #f3e6d0;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+}
+
+canvas.game-canvas {
+  position: fixed;
+  inset: 0;
+  display: block;
+}
+
+/* ---------- Garage overlay ---------- */
+
+.garage {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  z-index: 10;
+  background: radial-gradient(ellipse at 70% 30%, #3a2a17 0%, #16100a 65%, #0b0805 100%);
+}
+
+.garage.hidden {
+  display: none;
+}
+
+.garage-panel {
+  width: 380px;
+  min-width: 340px;
+  height: 100%;
+  overflow-y: auto;
+  padding: 28px 24px;
+  background: rgba(14, 10, 6, 0.86);
+  border-right: 1px solid #5a4326;
+  backdrop-filter: blur(4px);
+}
+
+.garage-header h1 {
+  font-size: 44px;
+  letter-spacing: 6px;
+  color: #ffb454;
+  text-shadow: 0 0 18px rgba(255, 140, 40, 0.35);
+}
+
+.tagline {
+  color: #b89b74;
+  font-size: 13px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-top: 4px;
+}
+
+.garage-section {
+  margin-top: 22px;
+}
+
+.garage-section h2 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: #8f795a;
+  margin-bottom: 8px;
+}
+
+.part-row {
+  display: flex;
+  gap: 8px;
+}
+
+.part-btn {
+  flex: 1;
+  padding: 10px 6px;
+  background: #241a10;
+  color: #d8c3a0;
+  border: 1px solid #4a3720;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.15s ease;
+}
+
+.part-btn small {
+  display: block;
+  color: #8f795a;
+  font-size: 10px;
+  margin-top: 3px;
+}
+
+.part-btn:hover {
+  border-color: #ffb454;
+}
+
+.part-btn.selected {
+  background: #4a3013;
+  border-color: #ffb454;
+  color: #ffd9a0;
+  box-shadow: 0 0 10px rgba(255, 150, 50, 0.25);
+}
+
+.paint-row {
+  display: flex;
+  gap: 14px;
+}
+
+.paint-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: #b89b74;
+}
+
+.paint-row input[type='color'] {
+  width: 64px;
+  height: 36px;
+  border: 1px solid #4a3720;
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+}
+
+.stat-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.stat-line {
+  display: grid;
+  grid-template-columns: 86px 1fr;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: #b89b74;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.stat-track {
+  height: 8px;
+  background: #241a10;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.stat-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #c96a1e, #ffb454);
+  border-radius: 4px;
+  transition: width 0.25s ease;
+}
+
+.launch-row {
+  margin-top: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.launch-btn {
+  width: 100%;
+  padding: 14px;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid #ffb454;
+  background: #4a3013;
+  color: #ffd9a0;
+  transition: all 0.15s ease;
+}
+
+.launch-btn:hover {
+  background: #6b4416;
+  box-shadow: 0 0 16px rgba(255, 150, 50, 0.35);
+}
+
+.launch-btn.desktop {
+  border-color: #6b5636;
+  background: #241a10;
+  color: #d8c3a0;
+}
+
+/* Restyle three.js VRButton to match the garage */
+#vr-button-slot button {
+  position: static !important;
+  width: 100% !important;
+  left: auto !important;
+  bottom: auto !important;
+  padding: 14px !important;
+  font-size: 16px !important;
+  font-weight: 700;
+  letter-spacing: 2px;
+  border-radius: 8px !important;
+  border: 1px solid #ffb454 !important;
+  background: #4a3013 !important;
+  color: #ffd9a0 !important;
+  opacity: 1 !important;
+  cursor: pointer;
+}
+
+.hint {
+  margin-top: 16px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: #7a6748;
+}
+
+.preview-wrap {
+  flex: 1;
+  position: relative;
+}
+
+#preview-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}

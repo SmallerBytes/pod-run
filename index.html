@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>POD RUN — Drift Circuit</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <!-- Garage overlay (shown before entering the race) -->
+    <div id="garage" class="garage">
+      <div class="garage-panel">
+        <header class="garage-header">
+          <h1>POD&nbsp;RUN</h1>
+          <p class="tagline">Rustmere Cut &mdash; Drift Circuit Qualifier</p>
+        </header>
+
+        <section class="garage-section">
+          <h2>Pilot Cage</h2>
+          <div class="part-row" id="cage-row"></div>
+        </section>
+
+        <section class="garage-section">
+          <h2>Thrusters</h2>
+          <div class="part-row" id="thruster-row"></div>
+        </section>
+
+        <section class="garage-section">
+          <h2>Paint</h2>
+          <div class="paint-row">
+            <label>Primary <input type="color" id="paint-primary" /></label>
+            <label>Secondary <input type="color" id="paint-secondary" /></label>
+            <label>Stripe <input type="color" id="paint-stripe" /></label>
+          </div>
+        </section>
+
+        <section class="garage-section">
+          <h2>Spec Sheet</h2>
+          <div id="stat-bars" class="stat-bars"></div>
+        </section>
+
+        <div class="launch-row">
+          <div id="vr-button-slot"></div>
+          <button id="desktop-start" class="launch-btn desktop">RUN ON DESKTOP</button>
+        </div>
+        <p class="hint">
+          VR: grip to grab the yokes, triggers to feed each thruster, A/X for overdrive.<br />
+          Desktop: hold Q / P for left / right thrust, Shift for overdrive, mouse to look.
+        </p>
+      </div>
+      <div class="preview-wrap">
+        <canvas id="preview-canvas"></canvas>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

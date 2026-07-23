@@ -1,0 +1,21 @@
+{
+  "name": "pod-run",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "POD RUN - WebXR desert skiff racing. Grab the yokes, feed the thrusters, win the Drift Circuit.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "three": "^0.166.1"
+  },
+  "devDependencies": {
+    "@types/three": "^0.166.0",
+    "@vitejs/plugin-basic-ssl": "^1.1.0",
+    "typescript": "^5.5.3",
+    "vite": "^5.3.4"
+  }
+}
