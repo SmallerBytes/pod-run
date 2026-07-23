@@ -1008,7 +1008,65 @@ function buildCable(
   engineLen: number,
   mats: Mats
 ): (detached: boolean, time: number) => void {
-  const from = new THREE.Vector3(side * 0.45, 0.55, -0.7);
+  const socketBase = new THREE.Vector3(side * 0.45, 0.55, -0.7);
+  const socketDirection = new THREE.Vector3(side * 0.32, 0.06, -1).normalize();
+  const from = socketBase.clone().addScaledVector(socketDirection, 0.34);
+
+  // Cockpit mounting plate: the cable now emerges from a bolted mechanical
+  // socket instead of disappearing into the hull.
+  const mount = new THREE.Mesh(
+    new THREE.BoxGeometry(0.24, 0.24, 0.1),
+    mats.secondary
+  );
+  mount.position.copy(socketBase).addScaledVector(socketDirection, -0.045);
+  mount.rotation.y = side * -0.22;
+  parent.add(mount);
+
+  const socket = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.085, 0.12, 0.3, 10),
+    mats.dark
+  );
+  socket.position.copy(socketBase).addScaledVector(socketDirection, 0.15);
+  socket.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), socketDirection);
+  parent.add(socket);
+
+  const socketLip = new THREE.Mesh(
+    new THREE.TorusGeometry(0.095, 0.025, 6, 14),
+    mats.guard
+  );
+  socketLip.position.copy(socketBase).addScaledVector(socketDirection, 0.31);
+  socketLip.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), socketDirection);
+  parent.add(socketLip);
+
+  // Corrugated strain relief immediately behind the flexible cable.
+  for (let i = 0; i < 3; i++) {
+    const relief = new THREE.Mesh(
+      new THREE.TorusGeometry(0.075 - i * 0.008, 0.016, 6, 12),
+      mats.cable
+    );
+    relief.position
+      .copy(socketBase)
+      .addScaledVector(socketDirection, 0.34 + i * 0.055);
+    relief.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), socketDirection);
+    parent.add(relief);
+  }
+
+  // Four visible fasteners help the plate read as structurally attached.
+  for (const [dy, dz] of [
+    [-0.075, -0.025],
+    [0.075, -0.025],
+    [-0.075, 0.055],
+    [0.075, 0.055]
+  ] as const) {
+    const bolt = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.018, 0.018, 0.025, 8),
+      mats.guard
+    );
+    bolt.rotation.x = Math.PI / 2;
+    bolt.position.set(socketBase.x, socketBase.y + dy, socketBase.z + dz);
+    parent.add(bolt);
+  }
+
   const strands =
     kitId === 'twin'
       ? [
@@ -1024,7 +1082,25 @@ function buildCable(
   cable.frustumCulled = false;
   parent.add(cable);
 
-  const attachLocal = new THREE.Vector3(-side * 0.2, 0, engineLen * 0.42);
+  // Matching plug on the engine-side termination.
+  const enginePlug = new THREE.Group();
+  enginePlug.position.set(-side * 0.2, 0, engineLen * 0.42);
+  const plugBody = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.085, 0.11, 0.28, 10),
+    mats.dark
+  );
+  plugBody.rotation.x = Math.PI / 2;
+  plugBody.position.z = 0.1;
+  enginePlug.add(plugBody);
+  const plugCollar = new THREE.Mesh(
+    new THREE.TorusGeometry(0.1, 0.025, 6, 14),
+    mats.guard
+  );
+  plugCollar.position.z = 0.24;
+  enginePlug.add(plugCollar);
+  engine.add(enginePlug);
+
+  const attachLocal = enginePlug.position.clone().add(new THREE.Vector3(0, 0, 0.25));
   const to = new THREE.Vector3();
   const a = new THREE.Vector3();
   const b = new THREE.Vector3();
@@ -1041,6 +1117,7 @@ function buildCable(
   };
 
   const update = (detached: boolean, time: number) => {
+    enginePlug.visible = !detached;
     if (detached) {
       // The engine-side connector has torn free. Keep the cable attached to
       // the cockpit and let its loose end hang, swing, and trail behind.

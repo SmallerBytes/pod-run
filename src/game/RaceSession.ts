@@ -53,7 +53,7 @@ export class RaceSession {
     private grab: GrabSystem | null
   ) {
     this.controller = new CraftController(computeStats(build), track);
-    this.tracker = new ProgressTracker(track, 0.995);
+    this.tracker = new ProgressTracker(track, 0);
 
     this.controller.setCollisionHandler((e) => {
       this.audio.crash(e.impact);
@@ -108,9 +108,10 @@ export class RaceSession {
   }
 
   private resetPlayer(): void {
-    this.controller.reset(0.995, 0);
-    this.tracker.t = 0.995;
-    this.tracker.unwrapped = -0.005;
+    // Start exactly on the start/finish gate and face its forward tangent.
+    this.controller.reset(0, 0);
+    this.tracker.t = 0;
+    this.tracker.unwrapped = 0;
     this.syncSkiffTransform();
   }
 

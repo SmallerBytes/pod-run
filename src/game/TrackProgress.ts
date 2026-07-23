@@ -20,25 +20,11 @@ export interface JumpFeature {
   rampHeight: number;
 }
 
-/** Shared visual/physics jump layout for the long course. */
-export const TRACK_JUMPS: readonly JumpFeature[] = [
-  {
-    launchT: 0.218,
-    pitStartT: 0.22,
-    pitEndT: 0.229,
-    launchVelocity: 18,
-    rampLength: 25,
-    rampHeight: 3.8
-  },
-  {
-    launchT: 0.655,
-    pitStartT: 0.657,
-    pitEndT: 0.666,
-    launchVelocity: 19.5,
-    rampLength: 28,
-    rampHeight: 4.2
-  }
-];
+/**
+ * Jump features are disabled for now. Keeping the typed feature list makes
+ * it easy to reintroduce tested ramps later without changing physics/rendering.
+ */
+export const TRACK_JUMPS: readonly JumpFeature[] = [];
 
 export function tInRange(t: number, start: number, end: number): boolean {
   const wrapped = wrap01(t);
