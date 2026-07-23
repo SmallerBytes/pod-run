@@ -5,7 +5,8 @@ import { CraftBuild, DEFAULT_BUILD, ENGINE_KITS, HULL_KITS } from '../garage/Loa
  * Assembles the skiff from a brick build (LEGO-style kits per slot).
  * Layout (craft local space, forward = -Z), matching the classic twin-engine
  * cable-linked open-cockpit racer silhouette:
- *   - open pilot pod around the origin, T-bar throttles between seat and dash
+ *   - open gondola bathtub (no sealed cylinder deck blocking the FOV)
+ *   - motorcycle-style twin throttle grips between seat and dash
  *   - twin engines far ahead at x = +-2.3, hung on flexible power cables
  *   - glowing energy tether between the engines
  */
@@ -109,8 +110,10 @@ export function buildSkiffFromBuild(
     buildThrottle(visual, leftLever, leftGripPoint, -1, mats);
     buildThrottle(visual, rightLever, rightGripPoint, 1, mats);
   }
-  dashboardAnchor.position.set(0, 0.88, -0.72);
-  dashboardAnchor.rotation.x = -0.42;
+  // Diegetic HUD is the face of the raised steering console — chest height,
+  // directly in the pilot's forward view (matches the reference cockpit)
+  dashboardAnchor.position.set(0, 0.97, -0.42);
+  dashboardAnchor.rotation.x = -0.35;
   visual.add(dashboardAnchor);
 
   // ---------- fake blob shadow ----------
@@ -149,75 +152,190 @@ function buildHull(parent: THREE.Group, kitId: string, mats: Mats): void {
   parent.add(hull);
 
   if (kitId === 'brick') {
-    const body = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.7, 2.2), mats.primary);
-    body.position.set(0, 0.5, 0.1);
-    hull.add(body);
-    for (const x of [-0.64, 0.64]) {
-      const plate = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.55, 1.6), mats.secondary);
-      plate.position.set(x, 0.5, 0.1);
+    // Open brick tub — walls only on the sides/rear so the forward FOV stays clear
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.18, 2.2), mats.primary);
+    floor.position.set(0, 0.18, 0.1);
+    hull.add(floor);
+    for (const x of [-0.58, 0.58]) {
+      const plate = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.55, 1.9), mats.secondary);
+      plate.position.set(x, 0.42, 0.15);
       hull.add(plate);
     }
-    addStuds(hull, mats.stripe, { cols: 4, rows: 2, dx: 0.26, dz: 0.3, x0: -0.39, z0: 0.65, y: 0.86 });
+    const rear = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.7, 0.14), mats.primary);
+    rear.position.set(0, 0.5, 1.12);
+    hull.add(rear);
+    // Low front lip (not a bulkhead)
+    const lip = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.14, 0.22), mats.primary);
+    lip.position.set(0, 0.32, -0.95);
+    hull.add(lip);
+    addStuds(hull, mats.stripe, { cols: 4, rows: 2, dx: 0.26, dz: 0.3, x0: -0.39, z0: 0.65, y: 0.3 });
   } else if (kitId === 'dart') {
-    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.5, 2.1, 8), mats.primary);
-    body.rotation.x = Math.PI / 2;
-    body.position.set(0, 0.5, 0.1);
-    hull.add(body);
-    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.52, 0.52, 0.14, 8), mats.stripe);
-    band.rotation.x = Math.PI / 2;
-    band.position.set(0, 0.5, 0.75);
-    hull.add(band);
-    addStuds(hull, mats.secondary, { cols: 1, rows: 3, dx: 0, dz: 0.3, x0: 0, z0: 0.35, y: 0.93 });
+    buildOpenGondola(hull, mats, {
+      width: 0.9,
+      length: 2.0,
+      bellyY: 0.22,
+      rimY: 0.52,
+      stripeBand: true,
+      studs: true
+    });
   } else {
-    // 'speeder' — weathered-silver teardrop pod with blue trim bands
-    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.55, 1.5, 6, 12), mats.primary);
-    body.rotation.x = Math.PI / 2;
-    body.scale.set(1, 0.82, 1.1);
-    body.position.set(0, 0.5, 0.15);
-    hull.add(body);
+    // 'speeder' — open gondola bathtub (classic twin-engine cable racer), not a sealed capsule
+    buildOpenGondola(hull, mats, {
+      width: 1.05,
+      length: 2.15,
+      bellyY: 0.2,
+      rimY: 0.55,
+      stripeBand: true,
+      studs: true,
+      teardrop: true
+    });
+  }
 
-    for (const z of [-0.45, 0.6]) {
-      const band = new THREE.Mesh(new THREE.CylinderGeometry(0.575, 0.575, 0.12, 14), mats.secondary);
-      band.rotation.x = Math.PI / 2;
-      band.scale.set(1, 1, 0.82);
-      band.position.set(0, 0.5, z);
+  // Shared cockpit floor + low side rails (hip-height, never blocking the dash)
+  const floorPlate = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.05, 1.05), mats.dark);
+  floorPlate.position.set(0, 0.12, 0.05);
+  hull.add(floorPlate);
+  for (const x of [-0.32, 0.32]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.22, 0.95), mats.dark);
+    rail.position.set(x, 0.28, 0.08);
+    hull.add(rail);
+  }
+
+  // Angled side button panels flanking the seat (reference-style consoles)
+  const buttonColors = [0xff4a3a, 0xffd23e, 0x4a90ff, 0x6fce6f, 0xff8c2a, 0x69e6e0];
+  for (const side of [-1, 1] as const) {
+    const panel = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.02, 0.55), mats.dark);
+    panel.position.set(side * 0.34, 0.42, -0.1);
+    panel.rotation.z = side * -0.35;
+    hull.add(panel);
+    for (let i = 0; i < 6; i++) {
+      const b = new THREE.Mesh(
+        new THREE.BoxGeometry(0.03, 0.012, 0.05),
+        new THREE.MeshBasicMaterial({ color: buttonColors[i] })
+      );
+      b.position.set(side * 0.34, 0.435, -0.32 + i * 0.09);
+      b.rotation.z = side * -0.35;
+      hull.add(b);
+    }
+  }
+
+  // Windscreen arches over and BEHIND the console — see-through, frames the view
+  const canopyMat = new THREE.MeshStandardMaterial({
+    color: 0xbfe2ec,
+    transparent: true,
+    opacity: 0.25,
+    roughness: 0.15,
+    metalness: 0.1,
+    side: THREE.DoubleSide
+  });
+  const screen = new THREE.Mesh(
+    new THREE.SphereGeometry(0.62, 14, 8, 0, Math.PI * 2, 0, Math.PI / 3.4),
+    canopyMat
+  );
+  screen.rotation.x = -0.3;
+  screen.scale.set(1.2, 0.9, 1);
+  screen.position.set(0, 1.0, -0.85);
+  hull.add(screen);
+
+  // Thin canopy hoop so the arch reads as a frame, not a solid tunnel
+  const hoop = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.018, 6, 20, Math.PI), mats.guard);
+  hoop.rotation.y = Math.PI / 2;
+  hoop.rotation.z = -0.12;
+  hoop.position.set(0, 0.95, -0.8);
+  hull.add(hoop);
+}
+
+/**
+ * Open bathtub pod: belly + side flanks + rear bulkhead + low front cowling.
+ * No sealed top deck — dash and throttles sit in the clear forward FOV.
+ */
+function buildOpenGondola(
+  hull: THREE.Group,
+  mats: Mats,
+  opts: {
+    width: number;
+    length: number;
+    bellyY: number;
+    rimY: number;
+    stripeBand?: boolean;
+    studs?: boolean;
+    teardrop?: boolean;
+  }
+): void {
+  const halfW = opts.width * 0.5;
+  const halfL = opts.length * 0.5;
+
+  // Flat belly slab — the tub floor from the outside
+  const belly = new THREE.Mesh(new THREE.BoxGeometry(opts.width * 0.92, 0.22, opts.length), mats.primary);
+  belly.position.set(0, opts.bellyY, 0.1);
+  hull.add(belly);
+
+  // Rounded undercarriage (half-pipe opening upward)
+  const under = new THREE.Mesh(
+    new THREE.CylinderGeometry(halfW * 0.9, halfW * 0.8, opts.length * 0.95, 14, 1, false, Math.PI * 1.5, Math.PI),
+    mats.primary
+  );
+  under.rotation.x = Math.PI / 2;
+  under.position.set(0, opts.bellyY - 0.02, 0.1);
+  hull.add(under);
+
+  // Side flanks — hip-height rails, open above so you look out over them
+  for (const side of [-1, 1] as const) {
+    const flank = new THREE.Mesh(
+      new THREE.BoxGeometry(0.1, opts.rimY - 0.1, opts.length * 0.72),
+      mats.primary
+    );
+    flank.position.set(side * (halfW * 0.9), (opts.rimY + 0.1) * 0.5, 0.22);
+    hull.add(flank);
+
+    // Forward rail drops toward the cowling (no high nose wall)
+    const taper = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.16, 0.5), mats.primary);
+    taper.position.set(side * (halfW * 0.72), 0.3, -halfL * 0.5);
+    taper.rotation.x = 0.4;
+    hull.add(taper);
+  }
+
+  // Rear bulkhead behind the seat
+  const rear = new THREE.Mesh(new THREE.BoxGeometry(opts.width * 0.92, opts.rimY + 0.2, 0.14), mats.primary);
+  rear.position.set(0, (opts.rimY + 0.2) * 0.5 + 0.05, halfL * 0.82);
+  hull.add(rear);
+
+  // Low front cowling — a lip you look OVER, with the dash sitting on top
+  const cowl = new THREE.Mesh(new THREE.BoxGeometry(opts.width * 0.75, 0.14, 0.4), mats.primary);
+  cowl.position.set(0, 0.36, -halfL * 0.68);
+  cowl.rotation.x = 0.22;
+  hull.add(cowl);
+  const cowlCap = new THREE.Mesh(new THREE.BoxGeometry(opts.width * 0.68, 0.05, 0.22), mats.guard);
+  cowlCap.position.set(0, 0.46, -halfL * 0.75);
+  cowlCap.rotation.x = 0.22;
+  hull.add(cowlCap);
+
+  if (opts.stripeBand) {
+    for (const z of [-0.3, 0.55]) {
+      const band = new THREE.Mesh(new THREE.BoxGeometry(opts.width * 0.96, 0.12, 0.1), mats.secondary);
+      band.position.set(0, opts.bellyY + 0.05, z);
       hull.add(band);
     }
+  }
 
-    // tail taper
-    const tail = new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.0, 12), mats.primary);
+  if (opts.teardrop) {
+    const tail = new THREE.Mesh(new THREE.ConeGeometry(halfW * 0.72, 0.9, 12), mats.primary);
     tail.rotation.x = Math.PI / 2;
-    tail.scale.y = 0.82;
-    tail.position.set(0, 0.5, 1.55);
+    tail.position.set(0, opts.bellyY + 0.02, halfL + 0.3);
     hull.add(tail);
-
-    addStuds(hull, mats.secondary, { cols: 2, rows: 2, dx: 0.24, dz: 0.26, x0: -0.12, z0: 0.85, y: 0.92 });
   }
 
-  // shared: open cockpit interior + curved windscreen
-  const floorPlate = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.06, 1.0), mats.dark);
-  floorPlate.position.set(0, 0.12, 0);
-  hull.add(floorPlate);
-  for (const x of [-0.3, 0.3]) {
-    const wall = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.35, 1.0), mats.dark);
-    wall.position.set(x, 0.32, 0);
-    hull.add(wall);
+  if (opts.studs) {
+    addStuds(hull, mats.secondary, {
+      cols: 2,
+      rows: 2,
+      dx: 0.22,
+      dz: 0.24,
+      x0: -0.11,
+      z0: 0.7,
+      y: opts.rimY + 0.02
+    });
   }
-
-  const screen = new THREE.Mesh(
-    new THREE.SphereGeometry(0.42, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2.6),
-    new THREE.MeshStandardMaterial({
-      color: 0xbfe2ec,
-      transparent: true,
-      opacity: 0.32,
-      roughness: 0.15,
-      metalness: 0.1,
-      side: THREE.DoubleSide
-    })
-  );
-  screen.rotation.x = -0.5;
-  screen.position.set(0, 0.86, -0.62);
-  hull.add(screen);
 }
 
 // ============================== seat kits ==============================
@@ -272,42 +390,43 @@ function buildSeat(parent: THREE.Group, kitId: string, mats: Mats): void {
 
 function buildNose(parent: THREE.Group, kitId: string, mats: Mats): void {
   const nose = new THREE.Group();
-  nose.position.set(0, 0.5, -1.15);
+  // Sit ahead of the low cowling — kept low so it doesn't eat the forward FOV
+  nose.position.set(0, 0.32, -1.25);
   parent.add(nose);
 
   if (kitId === 'ram') {
-    const wedge = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.32, 0.6), mats.secondary);
+    const wedge = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.28, 0.55), mats.secondary);
     wedge.rotation.x = 0.35;
-    wedge.position.z = -0.15;
+    wedge.position.z = -0.12;
     nose.add(wedge);
-    addStuds(nose, mats.stripe, { cols: 2, rows: 1, dx: 0.3, dz: 0, x0: -0.15, z0: -0.1, y: 0.16 });
+    addStuds(nose, mats.stripe, { cols: 2, rows: 1, dx: 0.28, dz: 0, x0: -0.14, z0: -0.08, y: 0.14 });
   } else if (kitId === 'sensor') {
-    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 10), mats.secondary);
-    ball.position.z = -0.2;
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 10), mats.secondary);
+    ball.position.z = -0.15;
     nose.add(ball);
     for (const [x, ry] of [
       [-0.1, 0.4],
       [0.1, -0.4],
       [0, 0]
     ] as const) {
-      const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.5, 5), mats.dark);
-      rod.position.set(x, 0.3, -0.2);
+      const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.45, 5), mats.dark);
+      rod.position.set(x, 0.28, -0.15);
       rod.rotation.z = ry;
       nose.add(rod);
     }
   } else {
     // 'cone' — classic point with twin antennas
-    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.36, 0.85, 12), mats.primary);
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.7, 12), mats.primary);
     cone.rotation.x = -Math.PI / 2;
-    cone.position.z = -0.3;
+    cone.position.z = -0.25;
     nose.add(cone);
-    const ring = new THREE.Mesh(new THREE.CylinderGeometry(0.37, 0.37, 0.08, 12), mats.stripe);
+    const ring = new THREE.Mesh(new THREE.CylinderGeometry(0.31, 0.31, 0.07, 12), mats.stripe);
     ring.rotation.x = Math.PI / 2;
-    ring.position.z = 0.1;
+    ring.position.z = 0.08;
     nose.add(ring);
-    for (const x of [-0.12, 0.12]) {
-      const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.014, 0.6, 5), mats.dark);
-      antenna.position.set(x, 0.42, -0.05);
+    for (const x of [-0.1, 0.1]) {
+      const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.014, 0.5, 5), mats.dark);
+      antenna.position.set(x, 0.36, 0);
       nose.add(antenna);
     }
   }
@@ -435,48 +554,55 @@ function buildCable(parent: THREE.Group, kitId: string, side: -1 | 1, engineLen:
 
 // ============================== cockpit fittings ==============================
 
+/**
+ * Raised steering console (reference-style): a support column rises from the
+ * cowling to a head unit at chest height, directly in front of the pilot.
+ * The diegetic HUD panel mounts on its pilot-facing face (dashboardAnchor).
+ */
 function buildDashConsole(parent: THREE.Group, mats: Mats): void {
-  const dash = new THREE.Group();
-  dash.position.set(0, 0.8, -0.72);
-  parent.add(dash);
+  const consolePod = new THREE.Group();
+  consolePod.position.set(0, 0, -0.6);
+  parent.add(consolePod);
 
-  const housing = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.2, 0.14), mats.dark);
-  housing.rotation.x = -0.42;
-  dash.add(housing);
+  // support column from the tub floor up to the head unit
+  const column = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.08, 0.65, 8), mats.dark);
+  column.position.set(0, 0.45, 0.04);
+  column.rotation.x = 0.1;
+  consolePod.add(column);
 
-  // top display pod (teal screen like the reference)
-  const pod = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.1, 0.08), mats.guard);
-  pod.position.set(0, 0.22, -0.05);
-  dash.add(pod);
-  const screen = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.16, 0.06),
-    new THREE.MeshBasicMaterial({ color: 0x69e6e0 })
-  );
-  screen.position.set(0, 0.22, -0.008);
-  dash.add(screen);
+  // corrugated boot where the column meets the floor
+  for (let i = 0; i < 4; i++) {
+    const seg = new THREE.Mesh(new THREE.TorusGeometry(0.09 - i * 0.008, 0.02, 6, 12), mats.cable);
+    seg.rotation.x = Math.PI / 2;
+    seg.position.set(0, 0.14 + i * 0.045, 0.06);
+    consolePod.add(seg);
+  }
 
-  // flanking button clusters
-  const buttonColors = [0xff4a3a, 0xffd23e, 0x4a90ff, 0x6fce6f];
+  // head unit — the HUD panel sits on its pilot-facing side
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.32, 0.18), mats.dark);
+  head.position.set(0, 0.95, 0.06);
+  head.rotation.x = -0.35;
+  consolePod.add(head);
+
+  // rounded top roll across the head unit
+  const roll = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.6, 10), mats.dark);
+  roll.rotation.z = Math.PI / 2;
+  roll.position.set(0, 1.1, 0.01);
+  consolePod.add(roll);
+
+  // side pods where the throttle arms pass the console (visual sockets)
   for (const s of [-1, 1]) {
-    const panel = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.14, 0.03), mats.guard);
-    panel.position.set(s * 0.32, 0.06, -0.04);
-    panel.rotation.x = -0.42;
-    dash.add(panel);
-    buttonColors.forEach((c, i) => {
-      const b = new THREE.Mesh(
-        new THREE.BoxGeometry(0.03, 0.03, 0.015),
-        new THREE.MeshBasicMaterial({ color: c })
-      );
-      b.position.set(s * 0.32 + ((i % 2) - 0.5) * 0.06, 0.06 + (Math.floor(i / 2) - 0.5) * 0.055, -0.017);
-      b.rotation.x = -0.42;
-      dash.add(b);
-    });
+    const pod = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.07, 0.16, 8), mats.guard);
+    pod.rotation.z = s * (Math.PI / 2 - 0.35);
+    pod.position.set(s * 0.34, 1.06, 0.04);
+    consolePod.add(pod);
   }
 }
 
 /**
- * A grabable push/pull throttle: fixed corrugated stalk on the floor, and a
- * sliding lever group (arm + T-grip + knuckle guard) that travels along Z.
+ * Reference-style throttle: an arm rises beside the console to a handlebar
+ * grip at chest height, angled up-and-outward — you reach up and grab it like
+ * Anakin. The whole lever still slides along Z for push/pull thrust.
  */
 function buildThrottle(
   parent: THREE.Group,
@@ -485,53 +611,77 @@ function buildThrottle(
   side: -1 | 1,
   mats: Mats
 ): void {
-  const x = side * 0.27;
-  const homeZ = -0.4;
+  const x = side * 0.26;
+  const homeZ = -0.42;
 
-  // fixed base: corrugated stalk boot
-  const base = new THREE.Group();
-  base.position.set(x, 0.14, homeZ);
-  parent.add(base);
-  for (let i = 0; i < 4; i++) {
-    const seg = new THREE.Mesh(new THREE.TorusGeometry(0.05 - i * 0.004, 0.02, 6, 10), mats.cable);
-    seg.rotation.x = Math.PI / 2;
-    seg.position.y = i * 0.045;
-    base.add(seg);
-  }
-  const rail = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.03, LEVER_TRAVEL * 2 + 0.1), mats.dark);
-  rail.position.set(x, 0.1, homeZ);
+  // Slide rail on the floor (shows the push/pull travel)
+  const rail = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.025, LEVER_TRAVEL * 2 + 0.12), mats.dark);
+  rail.position.set(x, 0.11, homeZ);
   parent.add(rail);
 
-  // sliding lever
+  // Sliding lever assembly
   lever.position.set(x, 0.14, homeZ);
   lever.userData = { homeZ, travel: LEVER_TRAVEL };
   parent.add(lever);
 
-  const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.03, 0.5, 8), mats.dark);
-  arm.position.set(0, 0.28, -0.06);
-  arm.rotation.x = 0.25;
-  lever.add(arm);
+  // corrugated boot at the base
+  for (let i = 0; i < 4; i++) {
+    const seg = new THREE.Mesh(new THREE.TorusGeometry(0.05 - i * 0.004, 0.016, 6, 10), mats.cable);
+    seg.rotation.x = Math.PI / 2;
+    seg.position.y = i * 0.04;
+    lever.add(seg);
+  }
 
-  // T-grip bar
-  const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.021, 0.021, 0.15, 8), mats.cable);
-  grip.rotation.z = Math.PI / 2;
-  grip.position.set(0, 0.54, -0.12);
-  lever.add(grip);
+  // lower arm — straight riser
+  const lower = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.034, 0.5, 8), mats.dark);
+  lower.position.set(0, 0.27, 0);
+  lever.add(lower);
 
-  // white knuckle guard plate (like the reference paddles)
-  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.09, 0.045), mats.guard);
-  guard.position.set(0, 0.54, -0.18);
-  lever.add(guard);
+  const elbow = new THREE.Mesh(new THREE.SphereGeometry(0.038, 8, 6), mats.guard);
+  elbow.position.set(0, 0.52, 0);
+  lever.add(elbow);
 
-  const capL = new THREE.Mesh(new THREE.SphereGeometry(0.026, 8, 6), mats.stripe);
-  capL.position.set(-0.085, 0.54, -0.12);
-  lever.add(capL);
-  const capR = capL.clone();
-  capR.position.x = 0.085;
-  lever.add(capR);
+  // upper arm — leans up, outward and slightly forward to the grip
+  const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.026, 0.46, 8), mats.dark);
+  upper.position.set(side * 0.03, 0.72, -0.05);
+  upper.rotation.set(-0.24, 0, side * -0.15);
+  lever.add(upper);
 
-  gripPoint.position.set(0, 0.54, -0.12);
-  lever.add(gripPoint);
+  // handlebar grip at chest height, tilted up-and-outward like the reference
+  const gripGroup = new THREE.Group();
+  gripGroup.position.set(side * 0.06, 0.92, -0.1);
+  gripGroup.rotation.z = -side * (Math.PI / 2 - 0.35);
+  lever.add(gripGroup);
+
+  const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 0.19, 10), mats.cable);
+  gripGroup.add(grip);
+
+  // rubber grip rings
+  for (const gy of [-0.05, 0, 0.05]) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.035, 0.008, 6, 12), mats.leather);
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = gy;
+    gripGroup.add(ring);
+  }
+
+  // knuckle guard plate in front of the grip
+  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.15, 0.035), mats.guard);
+  guard.position.set(0, 0, -0.075);
+  gripGroup.add(guard);
+
+  // outer end cap + inner thumb-button cluster (red, like the reference)
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.036, 8, 6), mats.stripe);
+  cap.position.y = 0.105;
+  gripGroup.add(cap);
+  const thumb = new THREE.Mesh(
+    new THREE.BoxGeometry(0.045, 0.03, 0.02),
+    new THREE.MeshBasicMaterial({ color: 0xff4a3a })
+  );
+  thumb.position.set(0, -0.08, 0.03);
+  gripGroup.add(thumb);
+
+  gripPoint.position.set(0, 0, 0);
+  gripGroup.add(gripPoint);
 }
 
 // ============================== helpers ==============================

@@ -46,9 +46,9 @@ export interface EngineKit extends KitMeta {
 }
 
 export const HULL_KITS: Record<string, HullKit> = {
-  speeder: { name: 'Speeder', desc: 'Sleek teardrop pod', mass: 1.0, hull: 100, profile: 1.0 },
-  dart: { name: 'Dart', desc: 'Light frame, fragile', mass: 0.85, hull: 70, profile: 0.9 },
-  brick: { name: 'Brick', desc: 'Armored block, heavy', mass: 1.3, hull: 150, profile: 1.12 }
+  speeder: { name: 'Speeder', desc: 'Open gondola bathtub', mass: 1.0, hull: 100, profile: 1.0 },
+  dart: { name: 'Dart', desc: 'Light open frame', mass: 0.85, hull: 70, profile: 0.9 },
+  brick: { name: 'Brick', desc: 'Armored open tub, heavy', mass: 1.3, hull: 150, profile: 1.12 }
 };
 
 export const ENGINE_KITS: Record<string, EngineKit> = {

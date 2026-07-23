@@ -20,10 +20,11 @@ interface HandState {
 }
 
 /**
- * VR throttle hands. Squeeze (grip button) near a T-bar to latch onto it;
- * while held, PUSHING the lever forward feeds that thruster and PULLING back
- * eases off. Leaning the controllers left/right (roll, plus a little lateral
- * drift) steers — slowly. Release and the lever settles back to idle.
+ * VR throttle hands. Squeeze (grip button) near a motorcycle-style grip to
+ * latch onto it; while held, PUSHING the lever forward feeds that thruster
+ * and PULLING back eases off. Leaning the controllers left/right (roll, plus
+ * a little lateral drift) steers — slowly. Release and the lever settles back
+ * to idle.
  */
 export class GrabSystem {
   private hands: HandState[] = [];
