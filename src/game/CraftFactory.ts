@@ -218,31 +218,6 @@ function buildHull(parent: THREE.Group, kitId: string, mats: Mats): void {
       hull.add(b);
     }
   }
-
-  // Windscreen arches over and BEHIND the console — see-through, frames the view
-  const canopyMat = new THREE.MeshStandardMaterial({
-    color: 0xbfe2ec,
-    transparent: true,
-    opacity: 0.25,
-    roughness: 0.15,
-    metalness: 0.1,
-    side: THREE.DoubleSide
-  });
-  const screen = new THREE.Mesh(
-    new THREE.SphereGeometry(0.62, 14, 8, 0, Math.PI * 2, 0, Math.PI / 3.4),
-    canopyMat
-  );
-  screen.rotation.x = -0.3;
-  screen.scale.set(1.2, 0.9, 1);
-  screen.position.set(0, 1.0, -0.85);
-  hull.add(screen);
-
-  // Thin canopy hoop so the arch reads as a frame, not a solid tunnel
-  const hoop = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.018, 6, 20, Math.PI), mats.guard);
-  hoop.rotation.y = Math.PI / 2;
-  hoop.rotation.z = -0.12;
-  hoop.position.set(0, 0.95, -0.8);
-  hull.add(hoop);
 }
 
 /**
@@ -555,28 +530,13 @@ function buildCable(parent: THREE.Group, kitId: string, side: -1 | 1, engineLen:
 // ============================== cockpit fittings ==============================
 
 /**
- * Raised steering console (reference-style): a support column rises from the
- * cowling to a head unit at chest height, directly in front of the pilot.
- * The diegetic HUD panel mounts on its pilot-facing face (dashboardAnchor).
+ * Raised steering console head unit at chest height — no center pillar
+ * (that blocked the FOV). The diegetic HUD mounts on its pilot-facing face.
  */
 function buildDashConsole(parent: THREE.Group, mats: Mats): void {
   const consolePod = new THREE.Group();
   consolePod.position.set(0, 0, -0.6);
   parent.add(consolePod);
-
-  // support column from the tub floor up to the head unit
-  const column = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.08, 0.65, 8), mats.dark);
-  column.position.set(0, 0.45, 0.04);
-  column.rotation.x = 0.1;
-  consolePod.add(column);
-
-  // corrugated boot where the column meets the floor
-  for (let i = 0; i < 4; i++) {
-    const seg = new THREE.Mesh(new THREE.TorusGeometry(0.09 - i * 0.008, 0.02, 6, 12), mats.cable);
-    seg.rotation.x = Math.PI / 2;
-    seg.position.set(0, 0.14 + i * 0.045, 0.06);
-    consolePod.add(seg);
-  }
 
   // head unit — the HUD panel sits on its pilot-facing side
   const head = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.32, 0.18), mats.dark);

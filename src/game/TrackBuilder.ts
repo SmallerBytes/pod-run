@@ -52,7 +52,6 @@ function buildCanyonWalls(track: Track): THREE.Group {
   const group = new THREE.Group();
   group.add(buildCliffRibbon(track, -1, 1337));
   group.add(buildCliffRibbon(track, 1, 7331));
-  group.add(buildScree(track));
   return group;
 }
 
@@ -78,7 +77,8 @@ function buildCliffRibbon(track: Track, s: -1 | 1, seed: number): THREE.Mesh {
     { f: 0.7, out: 4.2, color: new THREE.Color('#a86a3e') },
     { f: 0.73, out: 5.4, color: new THREE.Color('#8a5530') },
     { f: 1.0, out: 6.2, color: new THREE.Color('#b8865a') },
-    { f: 1.04, out: 20, color: new THREE.Color('#b4794a') }
+    // short rim shelf only — a long plateau can bridge over neighboring track segments
+    { f: 1.04, out: 9, color: new THREE.Color('#b4794a') }
   ];
   const stride = strata.length;
 
@@ -127,75 +127,25 @@ function buildCliffRibbon(track: Track, s: -1 | 1, seed: number): THREE.Mesh {
   return new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }));
 }
 
-/** Small grounded boulders at the cliff base — rubble, not floating rocks. */
-function buildScree(track: Track): THREE.InstancedMesh {
-  const rng = mulberry32(9001);
-  const spacingT = 16 / track.lapLength;
-  const count = Math.floor(1 / spacingT) * 2;
-
-  const geo = new THREE.DodecahedronGeometry(1, 0);
-  const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
-  const mesh = new THREE.InstancedMesh(geo, mat, count);
-
-  const dummy = new THREE.Object3D();
-  const rockA = new THREE.Color('#8a5a34');
-  const rockB = new THREE.Color('#6e4526');
-  const col = new THREE.Color();
-
-  let idx = 0;
-  for (let i = 0; i < count / 2; i++) {
-    const t = i * spacingT;
-    const p = track.posAt(t);
-    const side = track.sideAt(t);
-    const hw = track.halfWidthAt(t);
-    for (const sgn of [-1, 1]) {
-      if (idx >= count) break;
-      const size = 0.6 + rng() * 1.4;
-      dummy.position.copy(p).addScaledVector(side, sgn * (hw + 4 + rng() * 5));
-      // sink a third of the rock into the sand so it reads as grounded
-      dummy.position.y += size * 0.35 - 0.45;
-      dummy.rotation.set(rng() * 0.25, rng() * Math.PI * 2, rng() * 0.25);
-      dummy.scale.set(size, size * (0.7 + rng() * 0.4), size * (0.7 + rng() * 0.6));
-      dummy.updateMatrix();
-      mesh.setMatrixAt(idx, dummy.matrix);
-      col.lerpColors(rockA, rockB, rng());
-      mesh.setColorAt(idx, col);
-      idx++;
-    }
-  }
-  mesh.instanceMatrix.needsUpdate = true;
-  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-  return mesh;
-}
-
 function buildArchesAndGates(track: Track): THREE.Group {
   const group = new THREE.Group();
   const metal = new THREE.MeshLambertMaterial({ color: 0x4a4238 });
   const rust = new THREE.MeshLambertMaterial({ color: 0x8c4a1e });
   const bannerMat = new THREE.MeshBasicMaterial({ color: 0xff8c2a, side: THREE.DoubleSide });
 
-  // scrap arches every 1/12 of the loop
+  // Side pylons only — no overhead beams (those looked like rock bridging the canyon)
   for (let i = 0; i < 12; i++) {
     const t = i / 12 + 0.02;
     const p = track.posAt(t);
     const side = track.sideAt(t);
     const hw = track.halfWidthAt(t) + 2;
-    const tan = track.tangentAt(t);
 
-    const arch = new THREE.Group();
     for (const s of [-1, 1]) {
-      const pylon = new THREE.Mesh(new THREE.BoxGeometry(1.2, 14, 1.2), i % 3 === 0 ? rust : metal);
+      const pylon = new THREE.Mesh(new THREE.BoxGeometry(1.2, 10, 1.2), i % 3 === 0 ? rust : metal);
       pylon.position.copy(p).addScaledVector(side, s * hw);
-      pylon.position.y += 7;
-      arch.add(pylon);
+      pylon.position.y += 5;
+      group.add(pylon);
     }
-    const beam = new THREE.Mesh(new THREE.BoxGeometry(hw * 2 + 1.2, 1.0, 1.0), metal);
-    beam.position.copy(p);
-    beam.position.y += 13.5;
-    beam.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), side);
-    arch.add(beam);
-    void tan;
-    group.add(arch);
   }
 
   // start/finish gate with banner
