@@ -6,6 +6,7 @@ import { DesktopControls } from './game/DesktopControls';
 import { GrabSystem } from './game/GrabSystem';
 import { HudDiegetic } from './game/HudDiegetic';
 import { RaceSession } from './game/RaceSession';
+import { SkyEnvironment } from './game/SkyEnvironment';
 import { buildTrackScenery } from './game/TrackBuilder';
 import { Track } from './game/TrackProgress';
 import { CraftBuild, loadBuild } from './garage/Loadout';
@@ -32,6 +33,7 @@ scene.add(sun);
 // ---------- track ----------
 const track = new Track();
 buildTrackScenery(scene, track);
+const skyEnvironment = new SkyEnvironment(scene, track);
 
 // ---------- player skiff + seated rig ----------
 let currentBuild: CraftBuild = loadBuild();
@@ -138,6 +140,7 @@ const clock = new THREE.Clock();
 
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.05);
+  skyEnvironment.update(dt);
 
   if (inGarage) {
     studio.render(dt);

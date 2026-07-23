@@ -98,10 +98,18 @@ export function buildSkiffFromBuild(
 
   const cableL = buildCable(visual, build.bricks.cableL, -1, engL.group, engL.length, mats);
   const cableR = buildCable(visual, build.bricks.cableR, 1, engR.group, engR.length, mats);
-  const updateTether = buildEnergyTether(visual, engL.group, engR.group);
+  const updateTether = buildEnergyTether(
+    visual,
+    engL.group,
+    engR.group,
+    engL.emitterAnchor,
+    engR.emitterAnchor
+  );
   const updateEngineDynamics = createEngineDynamics(
     engL.group,
     engR.group,
+    engL.turbineRotor,
+    engR.turbineRotor,
     cableL,
     cableR,
     updateTether,
@@ -459,6 +467,8 @@ function buildEngine(
   group: THREE.Group;
   exhaust: THREE.Mesh;
   length: number;
+  emitterAnchor: THREE.Object3D;
+  turbineRotor: THREE.Group;
   updateDamage: (health: number, exploded: boolean, dt: number, time: number) => void;
 } {
   const dims =
@@ -507,6 +517,43 @@ function buildEngine(
     z0: -dims.len * 0.2,
     y: dims.r * 1.0
   });
+
+  // Inner-side energy tether emitter: armored socket, luminous lens, and a
+  // precise anchor point used by the animated beam.
+  const innerDirection = -side;
+  const emitterX = innerDirection * (dims.r + 0.08);
+  const emitterHousing = new THREE.Mesh(
+    new THREE.CylinderGeometry(dims.r * 0.16, dims.r * 0.21, dims.r * 0.32, 10),
+    mats.secondary
+  );
+  emitterHousing.rotation.z = Math.PI / 2;
+  emitterHousing.position.x = emitterX;
+  model.add(emitterHousing);
+
+  const emitterRim = new THREE.Mesh(
+    new THREE.TorusGeometry(dims.r * 0.13, dims.r * 0.035, 6, 14),
+    mats.guard
+  );
+  emitterRim.rotation.y = Math.PI / 2;
+  emitterRim.position.x = emitterX + innerDirection * dims.r * 0.16;
+  model.add(emitterRim);
+
+  const emitterLens = new THREE.Mesh(
+    new THREE.SphereGeometry(dims.r * 0.105, 10, 8),
+    new THREE.MeshBasicMaterial({
+      color: 0xaeeeff,
+      transparent: true,
+      opacity: 0.95,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    })
+  );
+  emitterLens.position.x = emitterX + innerDirection * dims.r * 0.18;
+  model.add(emitterLens);
+
+  const emitterAnchor = new THREE.Object3D();
+  emitterAnchor.position.copy(emitterLens.position);
+  g.add(emitterAnchor);
 
   // Layered jet/afterburner nozzle instead of a flat engine cap.
   const nozzleLength = dims.r * 0.78;
@@ -564,7 +611,10 @@ function buildEngine(
   chamber.position.z = lipZ - 0.035;
   model.add(chamber);
 
-  // Afterburner/turbine petals radiating around a center hub.
+  // Afterburner/turbine rotor: petals and hub spin together with throttle.
+  const turbineRotor = new THREE.Group();
+  turbineRotor.position.z = lipZ;
+  model.add(turbineRotor);
   const vaneMat = new THREE.MeshStandardMaterial({
     color: 0x39342f,
     roughness: 0.42,
@@ -581,10 +631,10 @@ function buildEngine(
     vane.position.set(
       Math.cos(angle) * dims.r * 0.38,
       Math.sin(angle) * dims.r * 0.38,
-      lipZ + 0.015
+      0.015
     );
     vane.rotation.z = angle - Math.PI / 2;
-    model.add(vane);
+    turbineRotor.add(vane);
   }
 
   const hub = new THREE.Mesh(
@@ -592,8 +642,8 @@ function buildEngine(
     mats.secondary
   );
   hub.rotation.x = Math.PI / 2;
-  hub.position.z = lipZ + dims.r * 0.08;
-  model.add(hub);
+  hub.position.z = dims.r * 0.08;
+  turbineRotor.add(hub);
 
   const exhaust = buildAnimatedExhaust(dims.r * 0.7);
   exhaust.rotation.x = Math.PI / 2;
@@ -602,7 +652,14 @@ function buildEngine(
   model.add(exhaust);
 
   const updateDamage = buildEngineDamageEffects(g, model, dims.r);
-  return { group: g, exhaust, length: dims.len, updateDamage };
+  return {
+    group: g,
+    exhaust,
+    length: dims.len,
+    emitterAnchor,
+    turbineRotor,
+    updateDamage
+  };
 }
 
 /**
@@ -852,8 +909,10 @@ function buildAnimatedExhaust(radius: number): THREE.Mesh {
 function buildEnergyTether(
   parent: THREE.Group,
   leftEngine: THREE.Group,
-  rightEngine: THREE.Group
-): (time: number) => void {
+  rightEngine: THREE.Group,
+  leftEmitter: THREE.Object3D,
+  rightEmitter: THREE.Object3D
+): (time: number, enabled: boolean) => void {
   const coreMat = new THREE.MeshBasicMaterial({
     color: 0xc9f4ff,
     transparent: true,
@@ -867,6 +926,7 @@ function buildEnergyTether(
 
   const points = 32;
   const arcs: {
+    line: THREE.Line;
     attr: THREE.BufferAttribute;
     material: THREE.LineBasicMaterial;
     phase: number;
@@ -885,7 +945,7 @@ function buildEnergyTether(
     const line = new THREE.Line(geometry, material);
     line.frustumCulled = false;
     parent.add(line);
-    arcs.push({ attr, material, phase: arcIndex * 2.17 });
+    arcs.push({ line, attr, material, phase: arcIndex * 2.17 });
   }
 
   const start = new THREE.Vector3();
@@ -893,10 +953,16 @@ function buildEnergyTether(
   const delta = new THREE.Vector3();
   const midpoint = new THREE.Vector3();
   const up = new THREE.Vector3(0, 1, 0);
-  const update = (time: number) => {
-    // Pull endpoints slightly toward the inner faces of the engines.
-    start.copy(leftEngine.position).add(new THREE.Vector3(0.18, 0, 0));
-    end.copy(rightEngine.position).add(new THREE.Vector3(-0.18, 0, 0));
+  const update = (time: number, enabled: boolean) => {
+    core.visible = enabled;
+    for (const arc of arcs) arc.line.visible = enabled;
+    if (!enabled) return;
+
+    // Follow the actual emitter sockets as the engines swing and rotate.
+    leftEngine.updateMatrix();
+    rightEngine.updateMatrix();
+    start.copy(leftEmitter.position).applyMatrix4(leftEngine.matrix);
+    end.copy(rightEmitter.position).applyMatrix4(rightEngine.matrix);
     delta.subVectors(end, start);
     const length = Math.max(0.1, delta.length());
     midpoint.copy(start).addScaledVector(delta, 0.5);
@@ -928,7 +994,7 @@ function buildEnergyTether(
       material.opacity = 0.5 + 0.4 * Math.abs(Math.sin(time * 11 + phase));
     });
   };
-  update(0);
+  update(0, true);
   return update;
 }
 
@@ -941,7 +1007,7 @@ function buildCable(
   engine: THREE.Group,
   engineLen: number,
   mats: Mats
-): () => void {
+): (detached: boolean, time: number) => void {
   const from = new THREE.Vector3(side * 0.45, 0.55, -0.7);
   const strands =
     kitId === 'twin'
@@ -974,14 +1040,25 @@ function buildCable(
     out.x += side * 0.25 * envelope;
   };
 
-  const update = () => {
-    engine.updateMatrix();
-    to.copy(attachLocal).applyMatrix4(engine.matrix);
+  const update = (detached: boolean, time: number) => {
+    if (detached) {
+      // The engine-side connector has torn free. Keep the cable attached to
+      // the cockpit and let its loose end hang, swing, and trail behind.
+      to.set(
+        side * (1.25 + Math.sin(time * 1.8) * 0.22),
+        -0.5 + Math.sin(time * 2.5 + side) * 0.18,
+        -3.0 + Math.cos(time * 1.55 + side) * 0.42
+      );
+    } else {
+      engine.updateMatrix();
+      to.copy(attachLocal).applyMatrix4(engine.matrix);
+    }
     let instance = 0;
     for (const strand of strands) {
       for (let i = 0; i < segments; i++) {
-        pointAt(a, i / segments, strand.offset, strand.sag);
-        pointAt(b, (i + 1) / segments, strand.offset, strand.sag);
+        const sag = strand.sag + (detached ? 1.25 : 0);
+        pointAt(a, i / segments, strand.offset, sag);
+        pointAt(b, (i + 1) / segments, strand.offset, sag);
         delta.subVectors(b, a);
         midpoint.copy(a).addScaledVector(delta, 0.5);
         dummy.position.copy(midpoint);
@@ -993,7 +1070,7 @@ function buildCable(
     }
     cable.instanceMatrix.needsUpdate = true;
   };
-  update();
+  update(false, 0);
   return update;
 }
 
@@ -1005,9 +1082,11 @@ function buildCable(
 function createEngineDynamics(
   leftEngine: THREE.Group,
   rightEngine: THREE.Group,
-  updateLeftCable: () => void,
-  updateRightCable: () => void,
-  updateTether: (time: number) => void,
+  leftTurbine: THREE.Group,
+  rightTurbine: THREE.Group,
+  updateLeftCable: (detached: boolean, time: number) => void,
+  updateRightCable: (detached: boolean, time: number) => void,
+  updateTether: (time: number, enabled: boolean) => void,
   updateLeftDamage: (health: number, exploded: boolean, dt: number, time: number) => void,
   updateRightDamage: (health: number, exploded: boolean, dt: number, time: number) => void
 ): SkiffRig['updateEngineDynamics'] {
@@ -1016,6 +1095,8 @@ function createEngineDynamics(
   const offsets = [new THREE.Vector3(), new THREE.Vector3()];
   const velocities = [new THREE.Vector3(), new THREE.Vector3()];
   const targets = [new THREE.Vector3(), new THREE.Vector3()];
+  const turbines = [leftTurbine, rightTurbine] as const;
+  const turbineSpeeds = [0, 0];
   let lastSpeed = 0;
   let time = 0;
 
@@ -1042,6 +1123,18 @@ function createEngineDynamics(
       const phase = index === 0 ? 0 : 2.4;
       const ownThrust = thrusts[index];
       const otherThrust = thrusts[1 - index];
+      const exploded = index === 0 ? leftExploded : rightExploded;
+
+      // Turbine has its own rotational inertia: throttle spins it up quickly,
+      // while release lets it coast down instead of stopping instantly.
+      const targetTurbineSpeed = exploded ? 0 : 1.4 + ownThrust * 34;
+      const turbineResponse = ownThrust > turbineSpeeds[index] / 34 ? 7 : 2.2;
+      turbineSpeeds[index] = THREE.MathUtils.lerp(
+        turbineSpeeds[index],
+        targetTurbineSpeed,
+        1 - Math.exp(-step * turbineResponse)
+      );
+      turbines[index].rotation.z += turbineSpeeds[index] * step * (index === 0 ? 1 : -1);
 
       targets[index].set(
         // Both engines swing outward/opposite the pod's turn, with a little
@@ -1085,9 +1178,9 @@ function createEngineDynamics(
       );
     });
 
-    updateLeftCable();
-    updateRightCable();
-    updateTether(time);
+    updateLeftCable(leftExploded, time);
+    updateRightCable(rightExploded, time);
+    updateTether(time, !leftExploded && !rightExploded);
     updateLeftDamage(leftHealth, leftExploded, step, time);
     updateRightDamage(rightHealth, rightExploded, step, time);
   };

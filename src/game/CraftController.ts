@@ -176,11 +176,11 @@ export class CraftController {
     // Controller roll/handle lean has no steering effect.
     const differential = effL - effR;
     const speedFactor = 0.45 + 0.55 * Math.min(1, this.speed / this.stats.topSpeed);
-    const yawTorque = -differential * this.stats.turnRate * 2.15 * speedFactor;
+    const yawTorque = -differential * this.stats.turnRate * 1.72 * speedFactor;
     this.yawRate += yawTorque * dt;
-    // Low damping preserves heavy rotational momentum. Counter-throttle is
-    // the quickest way to stop a turn; simply matching throttles coasts out.
-    this.yawRate *= Math.exp(-dt * 0.55);
+    // Moderate damping keeps some weight while making the craft easier to
+    // settle; counter-throttle still arrests a turn faster than coasting.
+    this.yawRate *= Math.exp(-dt * 1.25);
     this.yawRate = THREE.MathUtils.clamp(
       this.yawRate,
       -this.stats.turnRate * 1.25,
