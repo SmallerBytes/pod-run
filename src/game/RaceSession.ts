@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { Loadout, computeStats } from '../garage/Loadout';
+import { CraftBuild, computeStats } from '../garage/Loadout';
 import { AiRacer } from './AiRacer';
 import { AudioEngine } from './AudioEngine';
 import { CraftController, ThrustInput } from './CraftController';
-import { SkiffRig } from './CraftFactory';
+import { leverZForThrust, SkiffRig } from './CraftFactory';
 import { DustField } from './Effects';
 import { GrabSystem } from './GrabSystem';
 import { HudDiegetic } from './HudDiegetic';
@@ -41,13 +41,13 @@ export class RaceSession {
   constructor(
     private scene: THREE.Scene,
     private skiff: SkiffRig,
-    loadout: Loadout,
+    build: CraftBuild,
     private track: Track,
     private hud: HudDiegetic,
     private audio: AudioEngine,
     private grab: GrabSystem | null
   ) {
-    this.controller = new CraftController(computeStats(loadout), track);
+    this.controller = new CraftController(computeStats(build), track);
     this.tracker = new ProgressTracker(track, 0.995);
 
     this.controller.setCollisionHandler((e) => {
@@ -107,7 +107,7 @@ export class RaceSession {
     this.syncSkiffTransform();
   }
 
-  update(dt: number, input: InputProvider, restartPressed: boolean): void {
+  update(dt: number, input: InputProvider, restartPressed: boolean, isVR: boolean): void {
     if (this.state === 'idle') return;
 
     const rawInput = input.getInput();
@@ -189,9 +189,12 @@ export class RaceSession {
     this.skiff.leftExhaust.scale.set(scaleL, scaleL, scaleL);
     this.skiff.rightExhaust.scale.set(scaleR, scaleR, scaleR);
 
-    // yoke tilt mirrors throttle
-    this.skiff.leftYoke.rotation.x = -rawInput.left * 0.5;
-    this.skiff.rightYoke.rotation.x = -rawInput.right * 0.5;
+    // desktop: animate the levers from the keyboard ramps (VR hands drive
+    // them directly through GrabSystem)
+    if (!isVR) {
+      this.skiff.leftLever.position.z = leverZForThrust(this.skiff.leftLever, rawInput.left);
+      this.skiff.rightLever.position.z = leverZForThrust(this.skiff.rightLever, rawInput.right);
+    }
 
     // HUD
     this.hud.update(dt, {

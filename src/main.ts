@@ -1,14 +1,14 @@
 import * as THREE from 'three';
 import { VRButton } from 'three/examples/jsm/webxr/VRButton.js';
 import { AudioEngine } from './game/AudioEngine';
-import { buildSkiff, SkiffRig } from './game/CraftFactory';
+import { buildSkiffFromBuild, SkiffRig } from './game/CraftFactory';
 import { DesktopControls } from './game/DesktopControls';
 import { GrabSystem } from './game/GrabSystem';
 import { HudDiegetic } from './game/HudDiegetic';
 import { RaceSession } from './game/RaceSession';
 import { buildTrackScenery } from './game/TrackBuilder';
 import { Track } from './game/TrackProgress';
-import { Loadout, loadLoadout } from './garage/Loadout';
+import { CraftBuild, loadBuild } from './garage/Loadout';
 import { PaintStudio } from './garage/PaintStudio';
 
 // ---------- renderer / scene ----------
@@ -34,8 +34,8 @@ const track = new Track();
 buildTrackScenery(scene, track);
 
 // ---------- player skiff + seated rig ----------
-let currentLoadout: Loadout = loadLoadout();
-let skiff: SkiffRig = buildSkiff(currentLoadout);
+let currentBuild: CraftBuild = loadBuild();
+let skiff: SkiffRig = buildSkiffFromBuild(currentBuild);
 scene.add(skiff.group);
 
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 4000);
@@ -50,34 +50,41 @@ const audio = new AudioEngine();
 const hud = new HudDiegetic(track);
 hud.attachTo(skiff.dashboardAnchor);
 
-const grab = new GrabSystem(renderer, rig, skiff.leftYoke, skiff.rightYoke);
+const grab = new GrabSystem(
+  renderer,
+  rig,
+  skiff.leftLever,
+  skiff.rightLever,
+  skiff.leftGripPoint,
+  skiff.rightGripPoint
+);
 const desktop = new DesktopControls(camera, renderer.domElement);
 
-let session = new RaceSession(scene, skiff, currentLoadout, track, hud, audio, grab);
+let session = new RaceSession(scene, skiff, currentBuild, track, hud, audio, grab);
 
 // ---------- garage ----------
 const garageEl = document.getElementById('garage')!;
 let inGarage = true;
 
-const studio = new PaintStudio((loadout) => {
-  rebuildPlayerSkiff(loadout);
+const studio = new PaintStudio((build) => {
+  rebuildPlayerSkiff(build);
 });
 
-/** Swap the whole craft when parts/paint change in the garage. */
-function rebuildPlayerSkiff(loadout: Loadout): void {
-  currentLoadout = loadout;
+/** Swap the whole craft when bricks/paint change in the garage. */
+function rebuildPlayerSkiff(build: CraftBuild): void {
+  currentBuild = build;
   const oldGroup = skiff.group;
-  skiff = buildSkiff(loadout);
+  skiff = buildSkiffFromBuild(build);
   scene.remove(oldGroup);
   scene.add(skiff.group);
 
   skiff.group.add(rig);
   rig.position.copy(skiff.seatPosition);
   hud.attachTo(skiff.dashboardAnchor);
-  grab.setYokes(skiff.leftYoke, skiff.rightYoke);
+  grab.setLevers(skiff.leftLever, skiff.rightLever, skiff.leftGripPoint, skiff.rightGripPoint);
 
   session.dispose();
-  session = new RaceSession(scene, skiff, loadout, track, hud, audio, grab);
+  session = new RaceSession(scene, skiff, build, track, hud, audio, grab);
 }
 
 // ---------- launch flow ----------
@@ -139,14 +146,14 @@ renderer.setAnimationLoop(() => {
 
   const inVR = renderer.xr.isPresenting;
   if (inVR) {
-    grab.update();
+    grab.update(dt);
   } else {
     desktop.update(dt);
   }
 
   const provider = inVR ? grab : desktop;
   const restart = inVR ? grab.aButtonJustPressed : desktop.consumeRestart();
-  session.update(dt, provider, restart);
+  session.update(dt, provider, restart, inVR);
 
   renderer.render(scene, camera);
 });

@@ -1,32 +1,26 @@
 import * as THREE from 'three';
-import {
-  CAGES,
-  THRUSTERS,
-  Loadout,
-  loadLoadout,
-  saveLoadout,
-  statBars
-} from './Loadout';
-import { buildSkiff, SkiffRig } from '../game/CraftFactory';
+import { CraftBuild, loadBuild, saveBuild, statBars } from './Loadout';
+import { buildSkiffFromBuild, SkiffRig } from '../game/CraftFactory';
+import { BrickBuilder } from './BrickBuilder';
 
 /**
- * The garage: HTML part/paint pickers on the left, a live rotating 3D
- * preview of the assembled skiff on the right. Changes persist to
+ * The garage: LEGO-style slot/kit builder + paint pickers on the left, a live
+ * rotating 3D preview of the assembled skiff on the right. Changes persist to
  * localStorage and notify the game so the race skiff rebuilds.
  */
 export class PaintStudio {
-  loadout: Loadout;
+  build: CraftBuild;
 
   private previewRenderer: THREE.WebGLRenderer;
   private previewScene: THREE.Scene;
   private previewCamera: THREE.PerspectiveCamera;
   private previewRig: SkiffRig | null = null;
   private spin = 0;
-  private onChange: (loadout: Loadout) => void;
+  private onChange: (build: CraftBuild) => void;
   private visible = true;
 
-  constructor(onChange: (loadout: Loadout) => void) {
-    this.loadout = loadLoadout();
+  constructor(onChange: (build: CraftBuild) => void) {
+    this.build = loadBuild();
     this.onChange = onChange;
 
     // --- preview renderer ---
@@ -51,7 +45,14 @@ export class PaintStudio {
     floor.position.y = -0.6;
     this.previewScene.add(floor);
 
-    this.buildDom();
+    new BrickBuilder(
+      this.build,
+      document.getElementById('slot-grid')!,
+      document.getElementById('kit-row')!,
+      () => this.commit()
+    );
+    this.bindPaint();
+    this.refreshStats();
     this.rebuildPreview();
     this.resize();
     window.addEventListener('resize', () => this.resize());
@@ -70,78 +71,40 @@ export class PaintStudio {
   }
 
   private commit(): void {
-    saveLoadout(this.loadout);
+    saveBuild(this.build);
     this.rebuildPreview();
     this.refreshStats();
-    this.onChange(this.loadout);
+    this.onChange(this.build);
   }
 
   private rebuildPreview(): void {
     if (this.previewRig) {
       this.previewScene.remove(this.previewRig.group);
     }
-    this.previewRig = buildSkiff(this.loadout, { withCockpitFittings: true });
+    this.previewRig = buildSkiffFromBuild(this.build, { withCockpitFittings: true });
     this.previewRig.group.rotation.y = this.spin;
     this.previewRig.shadowBlob.position.y = -0.55;
     this.previewScene.add(this.previewRig.group);
   }
 
-  private buildDom(): void {
-    const cageRow = document.getElementById('cage-row')!;
-    const thrusterRow = document.getElementById('thruster-row')!;
-
-    const makeButtons = (
-      row: HTMLElement,
-      entries: Record<string, { name: string; desc: string }>,
-      getSelected: () => string,
-      select: (id: string) => void
-    ) => {
-      row.innerHTML = '';
-      for (const [id, spec] of Object.entries(entries)) {
-        const btn = document.createElement('button');
-        btn.className = 'part-btn' + (getSelected() === id ? ' selected' : '');
-        btn.innerHTML = `${spec.name}<small>${spec.desc}</small>`;
-        btn.addEventListener('click', () => {
-          select(id);
-          this.commit();
-          makeButtons(row, entries, getSelected, select);
-        });
-        row.appendChild(btn);
-      }
-    };
-
-    makeButtons(
-      cageRow,
-      CAGES,
-      () => this.loadout.cageId,
-      (id) => (this.loadout.cageId = id)
-    );
-    makeButtons(
-      thrusterRow,
-      THRUSTERS,
-      () => this.loadout.thrusterId,
-      (id) => (this.loadout.thrusterId = id)
-    );
-
-    const bindColor = (elId: string, key: keyof Loadout['paint']) => {
+  private bindPaint(): void {
+    const bindColor = (elId: string, key: keyof CraftBuild['paint']) => {
       const input = document.getElementById(elId) as HTMLInputElement;
-      input.value = this.loadout.paint[key];
+      input.value = this.build.paint[key];
       input.addEventListener('input', () => {
-        this.loadout.paint[key] = input.value;
+        this.build.paint[key] = input.value;
         this.commit();
       });
     };
     bindColor('paint-primary', 'primary');
     bindColor('paint-secondary', 'secondary');
     bindColor('paint-stripe', 'stripe');
-
-    this.refreshStats();
   }
 
   private refreshStats(): void {
     const wrap = document.getElementById('stat-bars')!;
     wrap.innerHTML = '';
-    for (const bar of statBars(this.loadout)) {
+    for (const bar of statBars(this.build)) {
       const line = document.createElement('div');
       line.className = 'stat-line';
       line.innerHTML = `<span>${bar.label}</span><div class="stat-track"><div class="stat-fill" style="width:${Math.round(

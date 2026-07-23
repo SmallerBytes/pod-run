@@ -20,21 +20,25 @@ npm install
 npm run dev
 ```
 
-- **Desktop:** open the printed `https://localhost:5173` URL. Pick your parts
-  and paint in the garage, then RUN ON DESKTOP. Hold `Q` / `P` for left/right
-  thrust, `Shift` for overdrive, mouse to look, `R` to rerun after finishing,
-  `Esc` back to the garage.
+- **Desktop:** open the printed `https://localhost:5173` URL. Build your skiff
+  in the brick garage, then RUN ON DESKTOP. Hold `Q` / `P` to push the left /
+  right throttle, `A` / `D` to lean and steer, `Shift` for overdrive, mouse to
+  look, `R` to rerun after finishing, `Esc` back to the garage.
 - **Quest:** on the same Wi-Fi, open `https://<your-pc-lan-ip>:5173` in the
   Quest browser, accept the self-signed certificate, then press ENTER VR.
-  - **Grip** near a yoke to grab it (left hand = left thruster).
-  - **Trigger** on a gripped hand feeds that thruster (0–100%).
+  - **Grip** near a T-bar throttle to grab it (left hand = left engine).
+  - **Push the lever forward** for power, **pull back** to slow down.
+  - **Lean your hands left / right** while gripping to steer — the skiff
+    responds slowly and deliberately, like hauling a heavy machine around.
   - **A / X** while gripping = overdrive (drains the OD meter, spikes heat).
-  - Steer by pushing one side harder than the other.
 
 ## Systems
 
-- **Garage:** 3 pilot cages x 3 thruster types, primary/secondary/stripe
-  paint, spec-sheet bars; persists to `localStorage`.
+- **Brick garage (LEGO-style):** snap kits into 9 slots — hull, seat, nose,
+  left/right fins, left/right engines, left/right cables — plus
+  primary/secondary/stripe paint and spec-sheet bars; persists to
+  `localStorage`. The default build is a silver-and-blue teardrop pod with
+  cable-hung twin engines.
 - **Race:** 3 laps of Rustmere Cut vs 4 AI rivals with light rubber-banding
   (off on the final lap).
 - **Dashboard (diegetic, no screen overlay):** speed, twin thrust bars,

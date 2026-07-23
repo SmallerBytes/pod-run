@@ -5,6 +5,8 @@ import { Track, wrap01 } from './TrackProgress';
 export interface ThrustInput {
   left: number; // 0..1
   right: number; // 0..1
+  /** -1 (lean left) .. 1 (lean right); primary steering signal. */
+  lean: number;
   overdrive: boolean;
 }
 
@@ -73,14 +75,13 @@ export class CraftController {
 
   update(dt: number, input: ThrustInput, frozen = false): void {
     const raw = frozen
-      ? { left: 0, right: 0, overdrive: false }
+      ? { left: 0, right: 0, lean: 0, overdrive: false }
       : input;
 
-    // response curve: deadzone + exponent so small squeezes don't twitch
+    // gentle response curve on lever position so small nudges stay calm
     const shape = (v: number) => {
       const c = Math.max(0, Math.min(1, v));
-      const dz = c < 0.06 ? 0 : (c - 0.06) / 0.94;
-      return Math.max(IDLE_FLOOR * (frozen ? 0 : 1), Math.pow(dz, 1.35));
+      return Math.max(IDLE_FLOOR * (frozen ? 0 : 1), Math.pow(c, 1.2));
     };
     let inL = shape(raw.left);
     let inR = shape(raw.right);
@@ -122,11 +123,15 @@ export class CraftController {
       this.speed = Math.max(targetSpeed, this.speed - (accel * 0.9 + (this.inSoftSand ? 14 : 0)) * dt);
     }
 
-    // yaw from differential thrust (works even when slow, stronger with speed)
+    // yaw: LEAN is the primary steering signal (slow, deliberate), with a
+    // small differential-thrust assist so an uneven push still nudges the nose
     const diff = effR - effL;
     const speedFactor = 0.4 + 0.6 * Math.min(1, this.speed / this.stats.topSpeed);
-    const targetYawRate = -diff * this.stats.turnRate * speedFactor;
-    this.yawRate = THREE.MathUtils.lerp(this.yawRate, targetYawRate, 1 - Math.exp(-dt * 6));
+    const leanYawMax = 0.55 * (this.stats.turnRate / 1.35);
+    const lean = THREE.MathUtils.clamp(raw.lean, -1, 1);
+    const targetYawRate = -(lean * leanYawMax + diff * this.stats.turnRate * 0.25) * speedFactor;
+    // heavy smoothing = sluggish, weighty lean response
+    this.yawRate = THREE.MathUtils.lerp(this.yawRate, targetYawRate, 1 - Math.exp(-dt * 2.5));
     this.yaw += this.yawRate * dt;
 
     // integrate position

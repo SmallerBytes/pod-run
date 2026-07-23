@@ -3,8 +3,9 @@ import { ThrustInput } from './CraftController';
 
 /**
  * Desktop fallback for iterating without a headset:
- * hold Q = left thruster, P = right thruster, Shift = overdrive,
- * mouse (pointer lock) = look around the cage, R = restart after finish.
+ * hold Q = push left throttle, P = push right throttle (release to ease off),
+ * A / D = lean left / right (slow steer), Shift = overdrive,
+ * mouse (pointer lock) = look around the pod, R = restart after finish.
  */
 export class DesktopControls {
   private keys = new Set<string>();
@@ -12,6 +13,7 @@ export class DesktopControls {
   private lookPitch = 0;
   private leftRamp = 0;
   private rightRamp = 0;
+  private leanRamp = 0;
 
   restartRequested = false;
 
@@ -37,6 +39,10 @@ export class DesktopControls {
     this.leftRamp = ramp(this.keys.has('q'), this.leftRamp);
     this.rightRamp = ramp(this.keys.has('p'), this.rightRamp);
 
+    // lean builds up slowly and recenters when released
+    const leanTarget = (this.keys.has('d') ? 1 : 0) - (this.keys.has('a') ? 1 : 0);
+    this.leanRamp = THREE.MathUtils.lerp(this.leanRamp, leanTarget, 1 - Math.exp(-dt * 3.5));
+
     this.camera.rotation.set(this.lookPitch, this.lookYaw, 0, 'YXZ');
   }
 
@@ -44,6 +50,7 @@ export class DesktopControls {
     return {
       left: this.leftRamp,
       right: this.rightRamp,
+      lean: this.leanRamp,
       overdrive: this.keys.has('shift'),
       leftHeld: this.leftRamp > 0.01,
       rightHeld: this.rightRamp > 0.01

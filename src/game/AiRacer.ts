@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { buildSkiff, randomRivalLoadout } from './CraftFactory';
+import { buildSkiffFromBuild, randomRivalBuild } from './CraftFactory';
 import { Track, ProgressTracker, wrap01 } from './TrackProgress';
 
 export interface RivalProfile {
@@ -36,7 +36,7 @@ export class AiRacer {
 
   constructor(private track: Track, index: number, startT: number, startLateral: number) {
     this.profile = ROSTER[index % ROSTER.length];
-    const rig = buildSkiff(randomRivalLoadout(index), { withCockpitFittings: false });
+    const rig = buildSkiffFromBuild(randomRivalBuild(index), { withCockpitFittings: false });
     this.group = rig.group;
     this.exhausts = [rig.leftExhaust, rig.rightExhaust];
     this.tracker = new ProgressTracker(track, startT);
