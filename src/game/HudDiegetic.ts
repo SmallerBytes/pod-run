@@ -12,6 +12,7 @@ export class HudDiegetic {
   private speedCanvas = new CanvasPanel(256, 128);
   private raceCanvas = new CanvasPanel(256, 128);
   private navCanvas = new CanvasPanel(256, 256);
+  private engineCanvas = new CanvasPanel(512, 176);
   private messageCanvas = new CanvasPanel(512, 128);
 
   private barLeft: Bar;
@@ -33,26 +34,65 @@ export class HudDiegetic {
     this.group = new THREE.Group();
 
     const panelMat = new THREE.MeshStandardMaterial({ color: 0x16130f, roughness: 0.85, metalness: 0.3 });
-    const backing = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.30, 0.03), panelMat);
-    this.group.add(backing);
+    const frameMat = new THREE.MeshStandardMaterial({
+      color: 0x77736b,
+      roughness: 0.42,
+      metalness: 0.72
+    });
 
-    // speed (left), race info (right), nav (center-top), message (above panel)
-    this.group.add(this.speedCanvas.mesh(0.17, 0.085, { x: -0.24, y: 0.045, z: 0.017 }));
-    this.group.add(this.raceCanvas.mesh(0.17, 0.085, { x: 0.24, y: 0.045, z: 0.017 }));
-    this.group.add(this.navCanvas.mesh(0.16, 0.16, { x: 0, y: 0.055, z: 0.017 }));
-    this.group.add(this.messageCanvas.mesh(0.32, 0.055, { x: 0, y: 0.2, z: 0.0 }));
+    const makeDisplay = (
+      x: number,
+      width: number,
+      height: number,
+      yaw: number
+    ): THREE.Group => {
+      const display = new THREE.Group();
+      display.position.x = x;
+      display.rotation.y = yaw;
+      const frame = new THREE.Mesh(
+        new THREE.BoxGeometry(width + 0.025, height + 0.025, 0.04),
+        frameMat
+      );
+      const backing = new THREE.Mesh(
+        new THREE.BoxGeometry(width, height, 0.045),
+        panelMat
+      );
+      backing.position.z = 0.006;
+      display.add(frame, backing);
+      this.group.add(display);
+      return display;
+    };
 
-    // bars along the bottom of the panel
-    this.barLeft = new Bar(0.13, '#ff8c2a', 'L');
-    this.barRight = new Bar(0.13, '#ff8c2a', 'R');
-    this.barStability = new Bar(0.13, '#ffd23e', 'STB');
-    this.barHull = new Bar(0.13, '#6fce6f', 'HULL');
-    this.barOverdrive = new Bar(0.13, '#9fd8ff', 'OD');
+    // Three independent displays: engines | navigation | gauges.
+    const engineDisplay = makeDisplay(-0.35, 0.31, 0.15, 0.12);
+    const mapDisplay = makeDisplay(0, 0.245, 0.255, 0);
+    const gaugeDisplay = makeDisplay(0.35, 0.31, 0.235, -0.12);
+
+    engineDisplay.add(
+      this.engineCanvas.mesh(0.292, 0.1, { x: 0, y: 0, z: 0.032 })
+    );
+    mapDisplay.add(
+      this.navCanvas.mesh(0.22, 0.22, { x: 0, y: 0, z: 0.032 })
+    );
+    gaugeDisplay.add(
+      this.speedCanvas.mesh(0.13, 0.072, { x: -0.072, y: 0.055, z: 0.032 })
+    );
+    gaugeDisplay.add(
+      this.raceCanvas.mesh(0.13, 0.072, { x: 0.072, y: 0.055, z: 0.032 })
+    );
+    this.group.add(this.messageCanvas.mesh(0.32, 0.055, { x: 0, y: 0.205, z: 0.0 }));
+
+    // Compact gauge bank along the bottom of the right display.
+    this.barLeft = new Bar(0.052, '#ff8c2a', 'L');
+    this.barRight = new Bar(0.052, '#ff8c2a', 'R');
+    this.barStability = new Bar(0.052, '#ffd23e', 'STB');
+    this.barHull = new Bar(0.052, '#6fce6f', 'HULL');
+    this.barOverdrive = new Bar(0.052, '#9fd8ff', 'OD');
 
     const bars = [this.barLeft, this.barRight, this.barOverdrive, this.barStability, this.barHull];
     bars.forEach((bar, i) => {
-      bar.group.position.set(-0.29 + i * 0.145, -0.095, 0.017);
-      this.group.add(bar.group);
+      bar.group.position.set(-0.12 + i * 0.06, -0.067, 0.032);
+      gaugeDisplay.add(bar.group);
     });
 
     this.computeTrackOutline();
@@ -91,6 +131,11 @@ export class HudDiegetic {
       leftHeld: boolean;
       rightHeld: boolean;
       overheated: boolean;
+      engineHealthL: number;
+      engineHealthR: number;
+      leftEngineExploded: boolean;
+      rightEngineExploded: boolean;
+      burnerActive: boolean;
     }
   ): void {
     this.barLeft.set(data.thrustL, data.leftHeld ? '#ff8c2a' : '#5a4326');
@@ -119,6 +164,13 @@ export class HudDiegetic {
       this.drawSpeed(data.speed, data.overheated);
       this.drawRace(data.place, data.racerCount, data.lap, data.lapsTotal, data.raceTime);
       this.drawNav(data.playerT, data.playerYaw, data.aiTs, data.nextCheckpointT);
+      this.drawEngines(
+        data.engineHealthL,
+        data.engineHealthR,
+        data.leftEngineExploded,
+        data.rightEngineExploded,
+        data.burnerActive
+      );
       if (this.messageText && performance.now() / 1000 > this.messageUntil) {
         this.messageText = '';
         this.drawMessage();
@@ -220,6 +272,103 @@ export class HudDiegetic {
     this.navCanvas.commit();
   }
 
+  private drawEngines(
+    leftHealth: number,
+    rightHealth: number,
+    leftExploded: boolean,
+    rightExploded: boolean,
+    burnerActive: boolean
+  ): void {
+    const { ctx, w, h } = this.engineCanvas;
+    ctx.clearRect(0, 0, w, h);
+    paintPanelBg(ctx, w, h);
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#8f795a';
+    ctx.font = 'bold 16px monospace';
+    ctx.fillText('TWIN ENGINE STATUS', w / 2, 19);
+
+    const healthColor = (health: number, exploded: boolean) => {
+      if (exploded || health <= 0.32) return '#ff4a3a';
+      if (health <= 0.66) return '#ffd23e';
+      return '#62d676';
+    };
+
+    const drawEngine = (cx: number, label: string, health: number, exploded: boolean) => {
+      const color = healthColor(health, exploded);
+      ctx.save();
+      ctx.translate(cx, 0);
+
+      // Side-view engine silhouette: intake, cylindrical body, bands, nozzle.
+      ctx.fillStyle = exploded ? 'rgba(255,74,58,0.12)' : `${color}2b`;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 4;
+      roundRect(ctx, -66, 44, 112, 48, 20);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(-66, 51);
+      ctx.lineTo(-92, 68);
+      ctx.lineTo(-66, 85);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(46, 52);
+      ctx.lineTo(76, 59);
+      ctx.lineTo(76, 77);
+      ctx.lineTo(46, 85);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.lineWidth = 3;
+      for (const x of [-28, -10, 8]) {
+        ctx.beginPath();
+        ctx.moveTo(x, 46);
+        ctx.lineTo(x, 90);
+        ctx.stroke();
+      }
+
+      // Health bar and numeric percentage.
+      ctx.fillStyle = '#251c16';
+      ctx.fillRect(-86, 105, 162, 15);
+      ctx.fillStyle = color;
+      ctx.fillRect(-84, 107, 158 * THREE.MathUtils.clamp(health, 0, 1), 11);
+      ctx.strokeStyle = '#8f795a';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(-86, 105, 162, 15);
+
+      ctx.fillStyle = color;
+      ctx.font = 'bold 18px monospace';
+      ctx.fillText(`${label}  ${exploded ? 'DESTROYED' : `${Math.round(health * 100)}%`}`, -5, 141);
+
+      if (exploded) {
+        ctx.lineWidth = 7;
+        ctx.beginPath();
+        ctx.moveTo(-45, 48);
+        ctx.lineTo(48, 90);
+        ctx.moveTo(48, 48);
+        ctx.lineTo(-45, 90);
+        ctx.stroke();
+      }
+      ctx.restore();
+    };
+
+    drawEngine(135, 'LEFT', leftHealth, leftExploded);
+    drawEngine(382, 'RIGHT', rightHealth, rightExploded);
+
+    if (burnerActive) {
+      ctx.fillStyle = '#ff8c2a';
+      ctx.font = 'bold 17px monospace';
+      ctx.fillText('Y  BURNER ACTIVE', w / 2, 165);
+    }
+
+    this.engineCanvas.commit();
+  }
+
   private drawMessage(): void {
     const { ctx, w, h } = this.messageCanvas;
     ctx.clearRect(0, 0, w, h);
@@ -280,7 +429,9 @@ class Bar {
     labelPanel.ctx.textAlign = 'center';
     labelPanel.ctx.fillText(label, 64, 32);
     labelPanel.commit();
-    this.group.add(labelPanel.mesh(0.09, 0.028, { x: 0, y: -0.034, z: 0 }));
+    this.group.add(
+      labelPanel.mesh(Math.max(0.048, width), 0.022, { x: 0, y: -0.031, z: 0 })
+    );
   }
 
   set(value: number, color?: string): void {

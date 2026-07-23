@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Track } from './TrackProgress';
+import { TRACK_JUMPS, Track, tInRange } from './TrackProgress';
 
 /**
  * Builds all static visuals for Rustmere Cut: a clearly contrasting textured
@@ -9,13 +9,14 @@ import { Track } from './TrackProgress';
 export function buildTrackScenery(scene: THREE.Scene, track: Track): void {
   scene.add(buildRibbon(track));
   scene.add(buildTrackBarricades(track));
+  scene.add(buildJumpFeatures(track));
   scene.add(buildArchesAndGates(track));
   scene.add(buildDesert());
 }
 
 function buildRibbon(track: Track): THREE.Group {
   const group = new THREE.Group();
-  const segs = 420;
+  const segs = 900;
   const positions: number[] = [];
   const indices: number[] = [];
   const colors: number[] = [];
@@ -36,7 +37,8 @@ function buildRibbon(track: Track): THREE.Group {
     uvs.push(l.x / 18, l.z / 18, r.x / 18, r.z / 18);
     const c = i % 2 === 0 ? packed : soft;
     colors.push(c.r, c.g, c.b, c.r, c.g, c.b);
-    if (i < segs) {
+    const segmentT = (i + 0.5) / segs;
+    if (i < segs && !isPitT(segmentT)) {
       const a = i * 2;
       indices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
     }
@@ -73,7 +75,8 @@ function buildTrackEdge(track: Track, sign: -1 | 1): THREE.Mesh {
     const edge = p.clone().addScaledVector(side, sign * track.halfWidthAt(t));
     const inner = edge.clone().addScaledVector(side, -sign * width);
     positions.push(edge.x, edge.y + 0.11, edge.z, inner.x, inner.y + 0.11, inner.z);
-    if (i < segs) {
+    const segmentT = (i + 0.5) / segs;
+    if (i < segs && !isPitT(segmentT)) {
       const a = i * 2;
       indices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
     }
@@ -90,8 +93,7 @@ function buildTrackEdge(track: Track, sign: -1 | 1): THREE.Mesh {
 }
 
 /** Repeated center markers make direction and speed obvious without collision. */
-function buildCenterDashes(track: Track): THREE.Group {
-  const group = new THREE.Group();
+function buildCenterDashes(track: Track): THREE.InstancedMesh {
   const material = new THREE.MeshBasicMaterial({
     color: 0xd29a58,
     transparent: true,
@@ -101,18 +103,22 @@ function buildCenterDashes(track: Track): THREE.Group {
   const dashGeometry = new THREE.PlaneGeometry(0.45, 5);
   dashGeometry.rotateX(-Math.PI / 2);
   const count = Math.floor(track.lapLength / 18);
+  const dashes = new THREE.InstancedMesh(dashGeometry, material, count);
+  const dummy = new THREE.Object3D();
 
   for (let i = 0; i < count; i++) {
     const t = i / count;
     const p = track.posAt(t);
     const tangent = track.tangentAt(t);
-    const dash = new THREE.Mesh(dashGeometry, material);
-    dash.position.copy(p);
-    dash.position.y += 0.12;
-    dash.rotation.y = Math.atan2(tangent.x, tangent.z);
-    group.add(dash);
+    dummy.position.copy(p);
+    dummy.position.y += 0.12;
+    dummy.rotation.set(0, Math.atan2(tangent.x, tangent.z), 0);
+    dummy.scale.setScalar(isPitT(t) ? 0 : 1);
+    dummy.updateMatrix();
+    dashes.setMatrixAt(i, dummy.matrix);
   }
-  return group;
+  dashes.instanceMatrix.needsUpdate = true;
+  return dashes;
 }
 
 /**
@@ -145,6 +151,7 @@ function buildTrackBarricades(track: Track): THREE.InstancedMesh {
       dummy.position.copy(p).addScaledVector(side, sign * (track.halfWidthAt(t) + 0.5));
       dummy.position.y += 0.5;
       dummy.rotation.set(0, Math.atan2(tangent.x, tangent.z), 0);
+      dummy.scale.setScalar(isPitT(t) ? 0 : 1);
       dummy.updateMatrix();
       barriers.setMatrixAt(instance, dummy.matrix);
       barriers.setColorAt(instance, (i + (sign > 0 ? 1 : 0)) % 2 === 0 ? orange : dark);
@@ -154,6 +161,80 @@ function buildTrackBarricades(track: Track): THREE.InstancedMesh {
   barriers.instanceMatrix.needsUpdate = true;
   if (barriers.instanceColor) barriers.instanceColor.needsUpdate = true;
   return barriers;
+}
+
+function isPitT(t: number): boolean {
+  return TRACK_JUMPS.some((jump) => tInRange(t, jump.pitStartT, jump.pitEndT));
+}
+
+/**
+ * Two real gaps in the track with raised launch ramps and deep dark pit beds.
+ * Physics uses the same TRACK_JUMPS data, keeping visuals and gameplay aligned.
+ */
+function buildJumpFeatures(track: Track): THREE.Group {
+  const group = new THREE.Group();
+  const rampMat = new THREE.MeshStandardMaterial({
+    color: 0x6f4c35,
+    roughness: 0.72,
+    metalness: 0.18
+  });
+  const pitMat = new THREE.MeshStandardMaterial({
+    color: 0x120d0a,
+    roughness: 1,
+    metalness: 0
+  });
+  const warningMat = new THREE.MeshBasicMaterial({ color: 0xff6a18 });
+
+  for (const jump of TRACK_JUMPS) {
+    const pitT = (jump.pitStartT + jump.pitEndT) * 0.5;
+    const pitCenter = track.posAt(pitT);
+    const pitTangent = track.tangentAt(pitT);
+    const pitLength = (jump.pitEndT - jump.pitStartT) * track.lapLength * 1.02;
+    const pitWidth = track.halfWidthAt(pitT) * 2 + 7;
+
+    const pit = new THREE.Mesh(
+      new THREE.BoxGeometry(pitWidth, 9, pitLength),
+      pitMat
+    );
+    pit.position.copy(pitCenter);
+    pit.position.y -= 4.55;
+    pit.rotation.y = Math.atan2(pitTangent.x, pitTangent.z);
+    group.add(pit);
+
+    const rampLength = jump.rampLength;
+    const rampHeight = jump.rampHeight;
+    const rampT = jump.launchT - rampLength * 0.5 / track.lapLength;
+    const rampCenter = track.posAt(rampT);
+    const rampTangent = track.tangentAt(rampT);
+    const rampWidth = track.halfWidthAt(rampT) * 1.65;
+    const ramp = new THREE.Mesh(
+      new THREE.BoxGeometry(rampWidth, 0.8, rampLength),
+      rampMat
+    );
+    ramp.position.copy(rampCenter);
+    ramp.position.y += rampHeight * 0.5;
+    ramp.rotation.set(
+      -Math.atan2(rampHeight, rampLength),
+      Math.atan2(rampTangent.x, rampTangent.z),
+      0
+    );
+    group.add(ramp);
+
+    // Bright transverse strips clearly announce launch and landing edges.
+    for (const edgeT of [jump.launchT, jump.pitEndT]) {
+      const edge = track.posAt(edgeT);
+      const tangent = track.tangentAt(edgeT);
+      const strip = new THREE.Mesh(
+        new THREE.BoxGeometry(track.halfWidthAt(edgeT) * 2, 0.05, 0.65),
+        warningMat
+      );
+      strip.position.copy(edge);
+      strip.position.y += edgeT === jump.launchT ? rampHeight + 0.12 : 0.13;
+      strip.rotation.y = Math.atan2(tangent.x, tangent.z);
+      group.add(strip);
+    }
+  }
+  return group;
 }
 
 function buildArchesAndGates(track: Track): THREE.Group {

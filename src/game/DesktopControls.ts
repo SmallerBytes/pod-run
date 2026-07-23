@@ -5,8 +5,8 @@ import { ThrustInput } from './CraftController';
  * Desktop fallback for iterating without a headset:
  * hold Q = push left throttle / turn right, P = push right throttle / turn left,
  * hold both for straight-line power (release to ease off), Shift = overdrive,
- * hold X for 5s = repair engines, mouse (pointer lock) = look around the pod,
- * R = restart after finish.
+ * Y toggles engine burner, hold X for 5s = repair engines,
+ * mouse (pointer lock) = look around the pod, R = restart after finish.
  */
 export class DesktopControls {
   private keys = new Set<string>();
@@ -14,6 +14,7 @@ export class DesktopControls {
   private lookPitch = 0;
   private leftRamp = 0;
   private rightRamp = 0;
+  private burnerEnabled = false;
 
   restartRequested = false;
   /** Seconds X has been held; RaceSession uses this for engine repair. */
@@ -25,6 +26,9 @@ export class DesktopControls {
     window.addEventListener('keydown', (e) => {
       this.keys.add(e.key.toLowerCase());
       if (e.key.toLowerCase() === 'r') this.restartRequested = true;
+      if (e.key.toLowerCase() === 'y' && !e.repeat) {
+        this.burnerEnabled = !this.burnerEnabled;
+      }
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
 
@@ -58,6 +62,7 @@ export class DesktopControls {
       right: this.rightRamp,
       lean: 0,
       overdrive: this.keys.has('shift'),
+      burner: this.burnerEnabled,
       leftHeld: this.leftRamp > 0.01,
       rightHeld: this.rightRamp > 0.01
     };

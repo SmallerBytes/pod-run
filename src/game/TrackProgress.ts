@@ -8,6 +8,53 @@ export interface TrackPointDef {
   width: number;
 }
 
+export interface JumpFeature {
+  /** Arc-length parameter where the ramp launches the craft. */
+  launchT: number;
+  /** Open track interval occupied by the pit. */
+  pitStartT: number;
+  pitEndT: number;
+  /** Upward launch speed in metres/second. */
+  launchVelocity: number;
+  rampLength: number;
+  rampHeight: number;
+}
+
+/** Shared visual/physics jump layout for the long course. */
+export const TRACK_JUMPS: readonly JumpFeature[] = [
+  {
+    launchT: 0.218,
+    pitStartT: 0.22,
+    pitEndT: 0.229,
+    launchVelocity: 18,
+    rampLength: 25,
+    rampHeight: 3.8
+  },
+  {
+    launchT: 0.655,
+    pitStartT: 0.657,
+    pitEndT: 0.666,
+    launchVelocity: 19.5,
+    rampLength: 28,
+    rampHeight: 4.2
+  }
+];
+
+export function tInRange(t: number, start: number, end: number): boolean {
+  const wrapped = wrap01(t);
+  return start <= end
+    ? wrapped >= start && wrapped <= end
+    : wrapped >= start || wrapped <= end;
+}
+
+export function crossedTrackT(previous: number, current: number, target: number): boolean {
+  const prev = wrap01(previous);
+  const curr = wrap01(current);
+  return curr >= prev
+    ? target > prev && target <= curr
+    : target > prev || target <= curr;
+}
+
 /**
  * Wraps the closed track spline with arc-length sampling so gameplay code can
  * ask "where am I along the loop" and "how wide is the canyon here" cheaply.

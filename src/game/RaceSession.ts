@@ -40,6 +40,8 @@ export class RaceSession {
   private rumbleTimer = 0;
   private finishPlace = 0;
   private bumpCooldown = 0;
+  private leftEngineWasExploded = false;
+  private rightEngineWasExploded = false;
 
   constructor(
     private scene: THREE.Scene,
@@ -91,6 +93,8 @@ export class RaceSession {
     this.lastPlace = 0;
     this.lastLap = 0;
     this.finishPlace = 0;
+    this.leftEngineWasExploded = false;
+    this.rightEngineWasExploded = false;
     this.resetPlayer();
 
     for (let i = 0; i < this.rivals.length; i++) {
@@ -172,22 +176,47 @@ export class RaceSession {
     // limp-mode / repair (hold X for 5s)
     const xHold = input.xHoldSeconds ?? 0;
     const xDone = !!input.xHoldCompleted;
+    const leftJustExploded =
+      this.controller.leftEngineExploded && !this.leftEngineWasExploded;
+    const rightJustExploded =
+      this.controller.rightEngineExploded && !this.rightEngineWasExploded;
+    const engineDamaged =
+      this.controller.leftEngineHealthFraction < 1 ||
+      this.controller.rightEngineHealthFraction < 1;
     if (racing && xDone) {
       this.controller.repairEngines();
       this.hud.showMessage('ENGINES REPAIRED', 2, '#6fce6f');
       this.audio.lapDing();
-    } else if (racing && xHold > 0.15 && (this.controller.limpMode || this.controller.hullFraction < 1)) {
+    } else if (racing && (leftJustExploded || rightJustExploded)) {
+      const side = leftJustExploded && rightJustExploded
+        ? 'BOTH ENGINES'
+        : leftJustExploded
+          ? 'LEFT ENGINE'
+          : 'RIGHT ENGINE';
+      this.hud.showMessage(`${side} DESTROYED`, 2.4, '#ff4a3a');
+    } else if (
+      racing &&
+      xHold > 0.15 &&
+      (this.controller.limpMode || this.controller.hullFraction < 1 || engineDamaged)
+    ) {
       const secs = Math.min(5, Math.ceil(5 - xHold));
       this.hud.showMessage(`REPAIR ${secs}s`, 0.35, '#9fd8ff');
+    } else if (
+      racing &&
+      (this.controller.leftEngineExploded || this.controller.rightEngineExploded)
+    ) {
+      this.hud.showMessage('ENGINE LOST — HOLD X 5s', 1.2, '#ff4a3a');
     } else if (racing && this.controller.limpMode) {
       this.hud.showMessage('HULL CRITICAL — HOLD X 5s', 1.2, '#ff4a3a');
     }
+    this.leftEngineWasExploded = this.controller.leftEngineExploded;
+    this.rightEngineWasExploded = this.controller.rightEngineExploded;
 
     // FX + audio + haptics
     const speedFactor = this.controller.speed / Math.max(1, this.controller.stats.topSpeed);
     this.dust.update(dt, this.controller.position, this.controller.yaw, this.controller.speed);
     this.audio.setThrust(this.controller.effLeft, this.controller.effRight, speedFactor);
-    this.audio.setOverheatWarning(this.controller.heat > 0.85);
+    this.audio.setOverheatWarning(this.controller.heat > 0.85 || this.controller.burnerActive);
 
     this.rumbleTimer += dt;
     if (this.rumbleTimer > 0.1) {
@@ -196,8 +225,13 @@ export class RaceSession {
     }
 
     // exhaust glow scales with thrust
-    const scaleL = 0.4 + this.controller.effLeft * 1.1 + (this.controller.overdriveActive ? 0.5 : 0);
-    const scaleR = 0.4 + this.controller.effRight * 1.1 + (this.controller.overdriveActive ? 0.5 : 0);
+    const burnerFlame = this.controller.burnerActive ? 0.85 : 0;
+    const scaleL =
+      0.4 + this.controller.effLeft * 1.1 +
+      (this.controller.overdriveActive ? 0.5 : 0) + burnerFlame;
+    const scaleR =
+      0.4 + this.controller.effRight * 1.1 +
+      (this.controller.overdriveActive ? 0.5 : 0) + burnerFlame;
     this.skiff.leftExhaust.scale.set(scaleL, scaleL, scaleL);
     this.skiff.rightExhaust.scale.set(scaleR, scaleR, scaleR);
     this.skiff.updateEngineDynamics(
@@ -205,7 +239,11 @@ export class RaceSession {
       this.controller.speed,
       this.controller.yawRate,
       this.controller.effLeft,
-      this.controller.effRight
+      this.controller.effRight,
+      this.controller.leftEngineHealthFraction,
+      this.controller.rightEngineHealthFraction,
+      this.controller.leftEngineExploded,
+      this.controller.rightEngineExploded
     );
 
     // desktop: animate the levers from the keyboard ramps (VR hands drive
@@ -234,7 +272,12 @@ export class RaceSession {
       nextCheckpointT: this.track.checkpointT(this.tracker.nextCheckpoint),
       leftHeld: rawInput.leftHeld,
       rightHeld: rawInput.rightHeld,
-      overheated: this.controller.heat > 0.85
+      overheated: this.controller.heat > 0.85,
+      engineHealthL: this.controller.leftEngineHealthFraction,
+      engineHealthR: this.controller.rightEngineHealthFraction,
+      leftEngineExploded: this.controller.leftEngineExploded,
+      rightEngineExploded: this.controller.rightEngineExploded,
+      burnerActive: this.controller.burnerActive
     });
 
     // restart after finish

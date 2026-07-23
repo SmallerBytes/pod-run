@@ -24,7 +24,11 @@ export interface SkiffRig {
     speed: number,
     yawRate: number,
     thrustLeft: number,
-    thrustRight: number
+    thrustRight: number,
+    leftHealth: number,
+    rightHealth: number,
+    leftExploded: boolean,
+    rightExploded: boolean
   ) => void;
   /** Sliding throttle lever groups; userData = { homeZ, travel }. */
   leftLever: THREE.Group;
@@ -100,7 +104,9 @@ export function buildSkiffFromBuild(
     engR.group,
     cableL,
     cableR,
-    updateTether
+    updateTether,
+    engL.updateDamage,
+    engR.updateDamage
   );
 
   // ---------- cockpit fittings ----------
@@ -449,43 +455,50 @@ function buildEngine(
   kitId: string,
   side: -1 | 1,
   mats: Mats
-): { group: THREE.Group; exhaust: THREE.Mesh; length: number } {
+): {
+  group: THREE.Group;
+  exhaust: THREE.Mesh;
+  length: number;
+  updateDamage: (health: number, exploded: boolean, dt: number, time: number) => void;
+} {
   const dims =
     kitId === 'torque' ? { r: 0.8, len: 3.6 } : kitId === 'spike' ? { r: 0.5, len: 5.4 } : { r: 0.64, len: 4.4 };
 
   const g = new THREE.Group();
   g.position.set(side * 2.3, 0.9, -6.2);
+  const model = new THREE.Group();
+  g.add(model);
 
   const body = new THREE.Mesh(new THREE.CylinderGeometry(dims.r, dims.r * 0.88, dims.len, 14), mats.primary);
   body.rotation.x = Math.PI / 2;
-  g.add(body);
+  model.add(body);
 
   // layered ring stack for that segmented turbine look
   for (let i = 0; i < 3; i++) {
     const ring = new THREE.Mesh(new THREE.TorusGeometry(dims.r * 1.04, 0.06, 6, 18), mats.secondary);
     ring.position.z = -dims.len * 0.32 + i * dims.len * 0.22;
-    g.add(ring);
+    model.add(ring);
   }
 
   const intake = new THREE.Mesh(new THREE.ConeGeometry(dims.r, dims.r * 2.1, 14), mats.secondary);
   intake.rotation.x = -Math.PI / 2;
   intake.position.z = -(dims.len / 2 + dims.r);
-  g.add(intake);
+  model.add(intake);
 
   // rear vane cluster (yellow slats fanning off the tail)
   for (let i = -1; i <= 1; i++) {
     const vane = new THREE.Mesh(new THREE.BoxGeometry(0.07, dims.r * 1.5, dims.r * 1.2), mats.stripe);
     vane.position.set(i * dims.r * 0.55, dims.r * 0.75, dims.len * 0.36);
     vane.rotation.z = i * 0.35;
-    g.add(vane);
+    model.add(vane);
   }
 
   // side scoop
   const scoop = new THREE.Mesh(new THREE.BoxGeometry(0.12, dims.r * 0.8, dims.len * 0.4), mats.secondary);
   scoop.position.set(side * dims.r * 1.02, 0, -dims.len * 0.1);
-  g.add(scoop);
+  model.add(scoop);
 
-  addStuds(g, mats.stripe, {
+  addStuds(model, mats.stripe, {
     cols: 1,
     rows: 3,
     dx: 0,
@@ -495,12 +508,243 @@ function buildEngine(
     y: dims.r * 1.0
   });
 
+  // Layered jet/afterburner nozzle instead of a flat engine cap.
+  const nozzleLength = dims.r * 0.78;
+  const nozzleZ = dims.len / 2 + nozzleLength * 0.5;
+
+  // Tapered outer shroud: narrower at the engine, flared at the exhaust lip.
+  const nozzle = new THREE.Mesh(
+    new THREE.CylinderGeometry(
+      dims.r * 0.82,
+      dims.r * 0.57,
+      nozzleLength,
+      16,
+      2,
+      true
+    ),
+    mats.dark
+  );
+  nozzle.rotation.x = Math.PI / 2;
+  nozzle.position.z = nozzleZ;
+  model.add(nozzle);
+
+  // Metallic collar where the nozzle joins the engine body.
+  const collar = new THREE.Mesh(
+    new THREE.TorusGeometry(dims.r * 0.62, dims.r * 0.075, 8, 20),
+    mats.secondary
+  );
+  collar.position.z = dims.len / 2 + 0.03;
+  model.add(collar);
+
+  // Thick heat-darkened rim around the nozzle exit.
+  const lipZ = dims.len / 2 + nozzleLength;
+  const lip = new THREE.Mesh(
+    new THREE.TorusGeometry(dims.r * 0.82, dims.r * 0.09, 8, 24),
+    new THREE.MeshStandardMaterial({
+      color: 0x24201d,
+      roughness: 0.48,
+      metalness: 0.85
+    })
+  );
+  lip.position.z = lipZ;
+  model.add(lip);
+
+  // Recessed glowing combustion chamber visible behind the vanes.
+  const chamber = new THREE.Mesh(
+    new THREE.CircleGeometry(dims.r * 0.72, 24),
+    new THREE.MeshBasicMaterial({
+      color: 0xff7a18,
+      transparent: true,
+      opacity: 0.82,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide
+    })
+  );
+  chamber.position.z = lipZ - 0.035;
+  model.add(chamber);
+
+  // Afterburner/turbine petals radiating around a center hub.
+  const vaneMat = new THREE.MeshStandardMaterial({
+    color: 0x39342f,
+    roughness: 0.42,
+    metalness: 0.8,
+    emissive: 0x3a1406,
+    emissiveIntensity: 0.45
+  });
+  for (let i = 0; i < 10; i++) {
+    const angle = (i / 10) * Math.PI * 2;
+    const vane = new THREE.Mesh(
+      new THREE.BoxGeometry(dims.r * 0.09, dims.r * 0.56, dims.r * 0.055),
+      vaneMat
+    );
+    vane.position.set(
+      Math.cos(angle) * dims.r * 0.38,
+      Math.sin(angle) * dims.r * 0.38,
+      lipZ + 0.015
+    );
+    vane.rotation.z = angle - Math.PI / 2;
+    model.add(vane);
+  }
+
+  const hub = new THREE.Mesh(
+    new THREE.CylinderGeometry(dims.r * 0.16, dims.r * 0.21, dims.r * 0.24, 12),
+    mats.secondary
+  );
+  hub.rotation.x = Math.PI / 2;
+  hub.position.z = lipZ + dims.r * 0.08;
+  model.add(hub);
+
   const exhaust = buildAnimatedExhaust(dims.r * 0.7);
   exhaust.rotation.x = Math.PI / 2;
-  exhaust.position.z = dims.len / 2 + 1.05;
-  g.add(exhaust);
+  // Cone base and nozzle bloom begin just outside the visible exhaust lip.
+  exhaust.position.z = lipZ + 1.15;
+  model.add(exhaust);
 
-  return { group: g, exhaust, length: dims.len };
+  const updateDamage = buildEngineDamageEffects(g, model, dims.r);
+  return { group: g, exhaust, length: dims.len, updateDamage };
+}
+
+/**
+ * Local smoke, flash, shock ring, and spark burst for one engine. The engine
+ * model disappears after detonation and is restored when repaired.
+ */
+function buildEngineDamageEffects(
+  engine: THREE.Group,
+  model: THREE.Group,
+  radius: number
+): (health: number, exploded: boolean, dt: number, time: number) => void {
+  const smokeCount = 22;
+  const smokePositions = new Float32Array(smokeCount * 3);
+  const smokeSeeds = new Float32Array(smokeCount * 3);
+  for (let i = 0; i < smokeCount; i++) {
+    smokeSeeds[i * 3] = (Math.random() - 0.5) * radius * 0.7;
+    smokeSeeds[i * 3 + 1] = Math.random();
+    smokeSeeds[i * 3 + 2] = (Math.random() - 0.5) * radius * 0.8;
+  }
+  const smokeGeometry = new THREE.BufferGeometry();
+  smokeGeometry.setAttribute('position', new THREE.BufferAttribute(smokePositions, 3));
+  const smokeMaterial = new THREE.PointsMaterial({
+    color: 0x332b25,
+    size: radius * 0.28,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false
+  });
+  const smoke = new THREE.Points(smokeGeometry, smokeMaterial);
+  smoke.visible = false;
+  smoke.frustumCulled = false;
+  engine.add(smoke);
+
+  const explosion = new THREE.Group();
+  explosion.visible = false;
+  engine.add(explosion);
+
+  const flashMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffb12f,
+    transparent: true,
+    opacity: 1,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  });
+  const flash = new THREE.Mesh(new THREE.SphereGeometry(radius * 0.65, 14, 10), flashMaterial);
+  explosion.add(flash);
+
+  const ringMaterial = new THREE.MeshBasicMaterial({
+    color: 0xff6a18,
+    transparent: true,
+    opacity: 1,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide
+  });
+  const shockRing = new THREE.Mesh(new THREE.TorusGeometry(radius * 0.72, 0.045, 6, 24), ringMaterial);
+  shockRing.rotation.x = Math.PI / 2;
+  explosion.add(shockRing);
+
+  const sparkCount = 42;
+  const sparkPositions = new Float32Array(sparkCount * 3);
+  const sparkVelocities: THREE.Vector3[] = [];
+  for (let i = 0; i < sparkCount; i++) {
+    sparkVelocities.push(
+      new THREE.Vector3(
+        Math.random() - 0.5,
+        Math.random() - 0.35,
+        Math.random() - 0.5
+      )
+        .normalize()
+        .multiplyScalar(2.5 + Math.random() * 5)
+    );
+  }
+  const sparkGeometry = new THREE.BufferGeometry();
+  const sparkAttribute = new THREE.BufferAttribute(sparkPositions, 3);
+  sparkGeometry.setAttribute('position', sparkAttribute);
+  const sparkMaterial = new THREE.PointsMaterial({
+    color: 0xffd36a,
+    size: radius * 0.12,
+    transparent: true,
+    opacity: 1,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  });
+  const sparks = new THREE.Points(sparkGeometry, sparkMaterial);
+  sparks.frustumCulled = false;
+  explosion.add(sparks);
+
+  let wasExploded = false;
+  let explosionAge = -1;
+  return (health, exploded, dt, time) => {
+    const damage = 1 - THREE.MathUtils.clamp(health, 0, 1);
+    smoke.visible = damage > 0.35 && !exploded;
+    smokeMaterial.opacity = THREE.MathUtils.clamp((damage - 0.35) * 1.1, 0, 0.65);
+    if (smoke.visible) {
+      for (let i = 0; i < smokeCount; i++) {
+        const cycle = (smokeSeeds[i * 3 + 1] + time * (0.35 + damage * 0.4)) % 1;
+        smokePositions[i * 3] =
+          smokeSeeds[i * 3] + Math.sin(time * 2.2 + i) * radius * 0.08 * cycle;
+        smokePositions[i * 3 + 1] = cycle * radius * 2.5;
+        smokePositions[i * 3 + 2] = smokeSeeds[i * 3 + 2] + cycle * radius * 0.5;
+      }
+      (smokeGeometry.getAttribute('position') as THREE.BufferAttribute).needsUpdate = true;
+    }
+
+    if (exploded && !wasExploded) {
+      explosionAge = 0;
+      explosion.visible = true;
+      model.visible = false;
+      flash.scale.setScalar(1);
+      flashMaterial.opacity = 1;
+      shockRing.scale.setScalar(1);
+      ringMaterial.opacity = 1;
+      sparkMaterial.opacity = 1;
+      sparkPositions.fill(0);
+      sparkAttribute.needsUpdate = true;
+    } else if (!exploded) {
+      explosionAge = -1;
+      explosion.visible = false;
+      model.visible = true;
+    }
+    wasExploded = exploded;
+
+    if (explosionAge >= 0) {
+      explosionAge += dt;
+      const expansion = 1 + explosionAge * 5.5;
+      flash.scale.setScalar(expansion);
+      flashMaterial.opacity = Math.max(0, 1 - explosionAge * 1.45);
+      shockRing.scale.setScalar(1 + explosionAge * 7);
+      ringMaterial.opacity = Math.max(0, 1 - explosionAge * 1.1);
+      for (let i = 0; i < sparkCount; i++) {
+        const velocity = sparkVelocities[i];
+        sparkPositions[i * 3] = velocity.x * explosionAge;
+        sparkPositions[i * 3 + 1] =
+          velocity.y * explosionAge - 2.8 * explosionAge * explosionAge;
+        sparkPositions[i * 3 + 2] = velocity.z * explosionAge;
+      }
+      sparkAttribute.needsUpdate = true;
+      sparkMaterial.opacity = Math.max(0, 1 - explosionAge * 0.65);
+      if (explosionAge > 1.7) explosion.visible = false;
+    }
+  };
 }
 
 /**
@@ -763,7 +1007,9 @@ function createEngineDynamics(
   rightEngine: THREE.Group,
   updateLeftCable: () => void,
   updateRightCable: () => void,
-  updateTether: (time: number) => void
+  updateTether: (time: number) => void,
+  updateLeftDamage: (health: number, exploded: boolean, dt: number, time: number) => void,
+  updateRightDamage: (health: number, exploded: boolean, dt: number, time: number) => void
 ): SkiffRig['updateEngineDynamics'] {
   const engines = [leftEngine, rightEngine] as const;
   const bases = engines.map((engine) => engine.position.clone());
@@ -778,7 +1024,11 @@ function createEngineDynamics(
     speed,
     yawRate,
     thrustLeft,
-    thrustRight
+    thrustRight,
+    leftHealth,
+    rightHealth,
+    leftExploded,
+    rightExploded
   ) => {
     const step = Math.min(dt, 0.05);
     time += step;
@@ -838,10 +1088,12 @@ function createEngineDynamics(
     updateLeftCable();
     updateRightCable();
     updateTether(time);
+    updateLeftDamage(leftHealth, leftExploded, step, time);
+    updateRightDamage(rightHealth, rightExploded, step, time);
   };
 
   // Initialize all flexible links before the first rendered frame.
-  update(0, 0, 0, 0, 0);
+  update(0, 0, 0, 0, 0, 1, 1, false, false);
   return update;
 }
 

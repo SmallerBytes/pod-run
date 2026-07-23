@@ -38,9 +38,11 @@ export class GrabSystem {
   private lean = 0;
 
   aButtonPressed = false;
-  /** True once either hand's A/X went down this frame (edge), for restart. */
+  /** True once right-controller A goes down this frame, for restart. */
   aButtonJustPressed = false;
   private aWasDown = false;
+  burnerEnabled = false;
+  private yWasDown = false;
 
   /** Seconds the left-controller X button has been held continuously. */
   xHoldSeconds = 0;
@@ -143,6 +145,7 @@ export class GrabSystem {
   update(dt: number): void {
     let aDown = false;
     let xDown = false;
+    let yDown = false;
     let leanSum = 0;
     let leanCount = 0;
 
@@ -154,6 +157,10 @@ export class GrabSystem {
       if (gp && gp.buttons[4]?.pressed) {
         if (hand.handedness === 'left') xDown = true;
         else aDown = true;
+      }
+      // xr-standard secondary button: Y on the left controller.
+      if (gp && hand.handedness === 'left' && gp.buttons[5]?.pressed) {
+        yDown = true;
       }
 
       const target = this.leverFor(hand);
@@ -212,6 +219,9 @@ export class GrabSystem {
     const heldLong = this.xHoldSeconds >= 5;
     this.xHoldCompleted = heldLong && !this.xWasHeldLong;
     this.xWasHeldLong = heldLong;
+
+    if (yDown && !this.yWasDown) this.burnerEnabled = !this.burnerEnabled;
+    this.yWasDown = yDown;
   }
 
   getInput(): ThrustInput & { leftHeld: boolean; rightHeld: boolean } {
@@ -233,6 +243,7 @@ export class GrabSystem {
       // Handle roll is intentionally ignored; steering comes from throttle split.
       lean: 0,
       overdrive,
+      burner: this.burnerEnabled,
       leftHeld,
       rightHeld
     };
