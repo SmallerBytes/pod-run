@@ -144,11 +144,26 @@ export class CraftController {
     const offset = this.position.clone().sub(center);
     const lateral = offset.dot(sideVec);
 
-    // Open-desert layout: no invisible lane clamp, wall collision, or off-track
-    // drag. Ground texture is visual-only and never affects the vehicle.
-    void hw;
-    void lateral;
+    // Visible barrier collision. The clamp accounts for the engine span, so
+    // contact happens when an outer engine reaches the rendered barricade.
+    const barrierMargin = hw - 2.8;
     this.inSoftSand = false;
+    if (Math.abs(lateral) > barrierMargin) {
+      const overshoot = Math.abs(lateral) - barrierMargin;
+      const sideSign = (lateral > 0 ? 1 : -1) as 1 | -1;
+      this.position.addScaledVector(sideVec, -sideSign * overshoot);
+      const impact = Math.min(
+        1,
+        (this.speed / this.stats.topSpeed) * (0.28 + overshoot * 0.35)
+      );
+      if (impact > 0.06 && this.collisionShake < 0.35) {
+        this.applyDamage(impact * 12);
+        this.speed *= 1 - impact * 0.42;
+        this.yawRate += sideSign * impact * 1.1;
+        this.collisionShake = 1;
+        this.onCollision?.({ side: sideSign, impact });
+      }
+    }
     this.collisionShake = Math.max(0, this.collisionShake - dt * 2.2);
 
     // hover height follows the canyon floor

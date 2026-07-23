@@ -8,6 +8,7 @@ import { Track } from './TrackProgress';
  */
 export function buildTrackScenery(scene: THREE.Scene, track: Track): void {
   scene.add(buildRibbon(track));
+  scene.add(buildTrackBarricades(track));
   scene.add(buildArchesAndGates(track));
   scene.add(buildDesert());
 }
@@ -112,6 +113,47 @@ function buildCenterDashes(track: Track): THREE.Group {
     group.add(dash);
   }
   return group;
+}
+
+/**
+ * Low segmented safety barriers following both outer track lines. They sit
+ * just outside the painted edge strips, leaving the full racing ribbon clear.
+ * Instance colors alternate for strong visibility at racing speed.
+ */
+function buildTrackBarricades(track: Track): THREE.InstancedMesh {
+  const spacing = 9;
+  const countPerSide = Math.max(1, Math.floor(track.lapLength / spacing));
+  const total = countPerSide * 2;
+  const geometry = new THREE.BoxGeometry(0.55, 0.9, spacing * 0.88);
+  const material = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 0.72,
+    metalness: 0.28
+  });
+  const barriers = new THREE.InstancedMesh(geometry, material, total);
+  const dummy = new THREE.Object3D();
+  const orange = new THREE.Color('#d87824');
+  const dark = new THREE.Color('#332d27');
+
+  let instance = 0;
+  for (const sign of [-1, 1] as const) {
+    for (let i = 0; i < countPerSide; i++) {
+      const t = (i + 0.5) / countPerSide;
+      const p = track.posAt(t);
+      const side = track.sideAt(t);
+      const tangent = track.tangentAt(t);
+      dummy.position.copy(p).addScaledVector(side, sign * (track.halfWidthAt(t) + 0.5));
+      dummy.position.y += 0.5;
+      dummy.rotation.set(0, Math.atan2(tangent.x, tangent.z), 0);
+      dummy.updateMatrix();
+      barriers.setMatrixAt(instance, dummy.matrix);
+      barriers.setColorAt(instance, (i + (sign > 0 ? 1 : 0)) % 2 === 0 ? orange : dark);
+      instance++;
+    }
+  }
+  barriers.instanceMatrix.needsUpdate = true;
+  if (barriers.instanceColor) barriers.instanceColor.needsUpdate = true;
+  return barriers;
 }
 
 function buildArchesAndGates(track: Track): THREE.Group {

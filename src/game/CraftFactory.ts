@@ -18,6 +18,14 @@ export interface SkiffRig {
   rightEngine: THREE.Group;
   leftExhaust: THREE.Mesh;
   rightExhaust: THREE.Mesh;
+  /** Visual-only spring motion for loose engines, cables, and energy tether. */
+  updateEngineDynamics: (
+    dt: number,
+    speed: number,
+    yawRate: number,
+    thrustLeft: number,
+    thrustRight: number
+  ) => void;
   /** Sliding throttle lever groups; userData = { homeZ, travel }. */
   leftLever: THREE.Group;
   rightLever: THREE.Group;
@@ -84,10 +92,16 @@ export function buildSkiffFromBuild(
   const engR = buildEngine(build.bricks.engineR, 1, mats);
   visual.add(engL.group, engR.group);
 
-  buildCable(visual, build.bricks.cableL, -1, engL.length, mats);
-  buildCable(visual, build.bricks.cableR, 1, engR.length, mats);
-
-  buildEnergyTether(visual, 4.6 - 0.3);
+  const cableL = buildCable(visual, build.bricks.cableL, -1, engL.group, engL.length, mats);
+  const cableR = buildCable(visual, build.bricks.cableR, 1, engR.group, engR.length, mats);
+  const updateTether = buildEnergyTether(visual, engL.group, engR.group);
+  const updateEngineDynamics = createEngineDynamics(
+    engL.group,
+    engR.group,
+    cableL,
+    cableR,
+    updateTether
+  );
 
   // ---------- cockpit fittings ----------
   const leftLever = new THREE.Group();
@@ -124,6 +138,7 @@ export function buildSkiffFromBuild(
     rightEngine: engR.group,
     leftExhaust: engL.exhaust,
     rightExhaust: engR.exhaust,
+    updateEngineDynamics,
     leftLever,
     rightLever,
     leftGripPoint,
@@ -587,14 +602,14 @@ function buildAnimatedExhaust(radius: number): THREE.Mesh {
 }
 
 /**
- * Animated energy coupler: a bright pulsing core plus three independently
- * wandering electrical arcs. It has no collision geometry.
+ * Animated energy coupler that continuously stretches between the two moving
+ * engines. Returns an updater used by the visual spring simulation.
  */
-function buildEnergyTether(parent: THREE.Group, length: number): void {
-  const tether = new THREE.Group();
-  tether.position.set(0, 0.9, -6.2);
-  parent.add(tether);
-
+function buildEnergyTether(
+  parent: THREE.Group,
+  leftEngine: THREE.Group,
+  rightEngine: THREE.Group
+): (time: number) => void {
   const coreMat = new THREE.MeshBasicMaterial({
     color: 0xc9f4ff,
     transparent: true,
@@ -602,21 +617,20 @@ function buildEnergyTether(parent: THREE.Group, length: number): void {
     depthWrite: false,
     blending: THREE.AdditiveBlending
   });
-  const core = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, length, 8), coreMat);
-  core.rotation.z = Math.PI / 2;
-  core.onBeforeRender = () => {
-    const t = performance.now() * 0.001;
-    coreMat.opacity = 0.72 + Math.sin(t * 18) * 0.18;
-    const pulse = 0.9 + Math.sin(t * 23) * 0.12;
-    core.scale.set(pulse, 1, pulse);
-  };
-  tether.add(core);
+  // Unit cylinder; updater positions, rotates, and stretches it between engines.
+  const core = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1, 8), coreMat);
+  parent.add(core);
 
   const points = 32;
+  const arcs: {
+    attr: THREE.BufferAttribute;
+    material: THREE.LineBasicMaterial;
+    phase: number;
+  }[] = [];
   for (let arcIndex = 0; arcIndex < 3; arcIndex++) {
-    const positions = new Float32Array(points * 3);
     const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const attr = new THREE.BufferAttribute(new Float32Array(points * 3), 3);
+    geometry.setAttribute('position', attr);
     const material = new THREE.LineBasicMaterial({
       color: arcIndex === 1 ? 0x76cfff : 0xe2fbff,
       transparent: true,
@@ -624,60 +638,211 @@ function buildEnergyTether(parent: THREE.Group, length: number): void {
       depthWrite: false,
       blending: THREE.AdditiveBlending
     });
-    const arc = new THREE.Line(geometry, material);
-    const phase = arcIndex * 2.17;
-    arc.onBeforeRender = () => {
-      const time = performance.now() * 0.001;
-      const attr = geometry.getAttribute('position') as THREE.BufferAttribute;
+    const line = new THREE.Line(geometry, material);
+    line.frustumCulled = false;
+    parent.add(line);
+    arcs.push({ attr, material, phase: arcIndex * 2.17 });
+  }
+
+  const start = new THREE.Vector3();
+  const end = new THREE.Vector3();
+  const delta = new THREE.Vector3();
+  const midpoint = new THREE.Vector3();
+  const up = new THREE.Vector3(0, 1, 0);
+  const update = (time: number) => {
+    // Pull endpoints slightly toward the inner faces of the engines.
+    start.copy(leftEngine.position).add(new THREE.Vector3(0.18, 0, 0));
+    end.copy(rightEngine.position).add(new THREE.Vector3(-0.18, 0, 0));
+    delta.subVectors(end, start);
+    const length = Math.max(0.1, delta.length());
+    midpoint.copy(start).addScaledVector(delta, 0.5);
+
+    core.position.copy(midpoint);
+    core.quaternion.setFromUnitVectors(up, delta.clone().normalize());
+    const pulse = 0.9 + Math.sin(time * 23) * 0.12;
+    core.scale.set(pulse, length, pulse);
+    coreMat.opacity = 0.72 + Math.sin(time * 18) * 0.18;
+
+    arcs.forEach(({ attr, material, phase }, arcIndex) => {
       const arr = attr.array as Float32Array;
       for (let i = 0; i < points; i++) {
         const u = i / (points - 1);
         const envelope = Math.sin(Math.PI * u);
-        arr[i * 3] = (u - 0.5) * length;
+        arr[i * 3] = THREE.MathUtils.lerp(start.x, end.x, u);
         arr[i * 3 + 1] =
+          THREE.MathUtils.lerp(start.y, end.y, u) +
           envelope *
-          (Math.sin(u * 31 + time * (15 + arcIndex * 2) + phase) * 0.055 +
-            Math.sin(u * 67 - time * 21 + phase) * 0.025);
+            (Math.sin(u * 31 + time * (15 + arcIndex * 2) + phase) * 0.065 +
+              Math.sin(u * 67 - time * 21 + phase) * 0.03);
         arr[i * 3 + 2] =
+          THREE.MathUtils.lerp(start.z, end.z, u) +
           envelope *
-          (Math.cos(u * 27 - time * (13 + arcIndex) + phase) * 0.05 +
-            Math.sin(u * 53 + time * 17 + phase) * 0.022);
+            (Math.cos(u * 27 - time * (13 + arcIndex) + phase) * 0.06 +
+              Math.sin(u * 53 + time * 17 + phase) * 0.028);
       }
       attr.needsUpdate = true;
       material.opacity = 0.5 + 0.4 * Math.abs(Math.sin(time * 11 + phase));
-    };
-    tether.add(arc);
-  }
+    });
+  };
+  update(0);
+  return update;
 }
 
 // ============================== cable kits ==============================
 
-function buildCable(parent: THREE.Group, kitId: string, side: -1 | 1, engineLen: number, mats: Mats): void {
+function buildCable(
+  parent: THREE.Group,
+  kitId: string,
+  side: -1 | 1,
+  engine: THREE.Group,
+  engineLen: number,
+  mats: Mats
+): () => void {
   const from = new THREE.Vector3(side * 0.45, 0.55, -0.7);
-  const to = new THREE.Vector3(side * 2.3 - side * 0.2, 0.9, -6.2 + engineLen * 0.42);
+  const strands =
+    kitId === 'twin'
+      ? [
+          { offset: 0.055, radius: 0.035, sag: 0.34 },
+          { offset: -0.055, radius: 0.035, sag: 0.34 }
+        ]
+      : kitId === 'taut'
+        ? [{ offset: 0, radius: 0.055, sag: 0.08 }]
+        : [{ offset: 0, radius: 0.065, sag: 0.58 }];
+  const segments = 18;
+  const geometry = new THREE.CylinderGeometry(1, 1, 1, 6);
+  const cable = new THREE.InstancedMesh(geometry, mats.cable, strands.length * segments);
+  cable.frustumCulled = false;
+  parent.add(cable);
 
-  const makeTube = (offset: number, radius: number, sag: number) => {
-    const mid = from.clone().add(to).multiplyScalar(0.5);
-    mid.y -= sag;
-    mid.x += side * 0.25;
-    const shifted = (v: THREE.Vector3) => v.clone().add(new THREE.Vector3(0, offset, 0));
-    const curve =
-      sag > 0.01
-        ? new THREE.CatmullRomCurve3([shifted(from), shifted(mid), shifted(to)])
-        : new THREE.CatmullRomCurve3([shifted(from), shifted(from.clone().lerp(to, 0.5)), shifted(to)]);
-    const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, 22, radius, 6), mats.cable);
-    parent.add(tube);
+  const attachLocal = new THREE.Vector3(-side * 0.2, 0, engineLen * 0.42);
+  const to = new THREE.Vector3();
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const midpoint = new THREE.Vector3();
+  const delta = new THREE.Vector3();
+  const up = new THREE.Vector3(0, 1, 0);
+  const dummy = new THREE.Object3D();
+
+  const pointAt = (out: THREE.Vector3, u: number, offset: number, sag: number) => {
+    out.copy(from).lerp(to, u);
+    const envelope = 4 * u * (1 - u);
+    out.y += offset - sag * envelope;
+    out.x += side * 0.25 * envelope;
   };
 
-  if (kitId === 'twin') {
-    makeTube(0.05, 0.035, 0.3);
-    makeTube(-0.05, 0.035, 0.3);
-  } else if (kitId === 'taut') {
-    makeTube(0, 0.06, 0);
-  } else {
-    // 'slack' — drooping power line like the reference
-    makeTube(0, 0.065, 0.5);
-  }
+  const update = () => {
+    engine.updateMatrix();
+    to.copy(attachLocal).applyMatrix4(engine.matrix);
+    let instance = 0;
+    for (const strand of strands) {
+      for (let i = 0; i < segments; i++) {
+        pointAt(a, i / segments, strand.offset, strand.sag);
+        pointAt(b, (i + 1) / segments, strand.offset, strand.sag);
+        delta.subVectors(b, a);
+        midpoint.copy(a).addScaledVector(delta, 0.5);
+        dummy.position.copy(midpoint);
+        dummy.quaternion.setFromUnitVectors(up, delta.clone().normalize());
+        dummy.scale.set(strand.radius, delta.length(), strand.radius);
+        dummy.updateMatrix();
+        cable.setMatrixAt(instance++, dummy.matrix);
+      }
+    }
+    cable.instanceMatrix.needsUpdate = true;
+  };
+  update();
+  return update;
+}
+
+/**
+ * Loose-coupled visual suspension for the engines. Spring/damper motion makes
+ * them lag behind acceleration and turns, while independent thrust and engine
+ * vibration keep the pair from moving like one rigid object.
+ */
+function createEngineDynamics(
+  leftEngine: THREE.Group,
+  rightEngine: THREE.Group,
+  updateLeftCable: () => void,
+  updateRightCable: () => void,
+  updateTether: (time: number) => void
+): SkiffRig['updateEngineDynamics'] {
+  const engines = [leftEngine, rightEngine] as const;
+  const bases = engines.map((engine) => engine.position.clone());
+  const offsets = [new THREE.Vector3(), new THREE.Vector3()];
+  const velocities = [new THREE.Vector3(), new THREE.Vector3()];
+  const targets = [new THREE.Vector3(), new THREE.Vector3()];
+  let lastSpeed = 0;
+  let time = 0;
+
+  const update: SkiffRig['updateEngineDynamics'] = (
+    dt,
+    speed,
+    yawRate,
+    thrustLeft,
+    thrustRight
+  ) => {
+    const step = Math.min(dt, 0.05);
+    time += step;
+    const acceleration =
+      step > 0.0001 ? THREE.MathUtils.clamp((speed - lastSpeed) / step, -45, 65) : 0;
+    lastSpeed = speed;
+    const thrusts = [thrustLeft, thrustRight];
+
+    engines.forEach((engine, index) => {
+      const side = index === 0 ? -1 : 1;
+      const phase = index === 0 ? 0 : 2.4;
+      const ownThrust = thrusts[index];
+      const otherThrust = thrusts[1 - index];
+
+      targets[index].set(
+        // Both engines swing outward/opposite the pod's turn, with a little
+        // independent spread from differential thrust.
+        yawRate * 1.15 + side * (ownThrust - otherThrust) * 0.12,
+        Math.sin(time * 3.4 + phase) * (0.055 + ownThrust * 0.045) +
+          Math.sin(time * 8.7 + phase) * 0.018,
+        // Acceleration pulls the engines back toward the cockpit; stronger
+        // individual thrust tugs that engine slightly farther forward.
+        acceleration * 0.011 - ownThrust * 0.11 +
+          Math.sin(time * 2.7 + phase) * 0.035
+      );
+
+      // Spring-damper integration: loose enough to visibly overshoot, stable
+      // enough to avoid VR-unfriendly snapping.
+      velocities[index].addScaledVector(
+        targets[index].clone().sub(offsets[index]),
+        10.5 * step
+      );
+      velocities[index].multiplyScalar(Math.exp(-4.2 * step));
+      offsets[index].addScaledVector(velocities[index], step);
+      offsets[index].x = THREE.MathUtils.clamp(offsets[index].x, -0.55, 0.55);
+      offsets[index].y = THREE.MathUtils.clamp(offsets[index].y, -0.24, 0.24);
+      offsets[index].z = THREE.MathUtils.clamp(offsets[index].z, -0.5, 0.6);
+
+      engine.position.copy(bases[index]).add(offsets[index]);
+      engine.rotation.x = THREE.MathUtils.lerp(
+        engine.rotation.x,
+        -velocities[index].y * 0.16 + Math.sin(time * 5 + phase) * 0.012,
+        1 - Math.exp(-step * 7)
+      );
+      engine.rotation.y = THREE.MathUtils.lerp(
+        engine.rotation.y,
+        -yawRate * 0.24 - side * (ownThrust - otherThrust) * 0.05,
+        1 - Math.exp(-step * 6)
+      );
+      engine.rotation.z = THREE.MathUtils.lerp(
+        engine.rotation.z,
+        -velocities[index].x * 0.14 + side * Math.sin(time * 4.1 + phase) * 0.015,
+        1 - Math.exp(-step * 6)
+      );
+    });
+
+    updateLeftCable();
+    updateRightCable();
+    updateTether(time);
+  };
+
+  // Initialize all flexible links before the first rendered frame.
+  update(0, 0, 0, 0, 0);
+  return update;
 }
 
 // ============================== cockpit fittings ==============================

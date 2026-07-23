@@ -200,6 +200,13 @@ export class RaceSession {
     const scaleR = 0.4 + this.controller.effRight * 1.1 + (this.controller.overdriveActive ? 0.5 : 0);
     this.skiff.leftExhaust.scale.set(scaleL, scaleL, scaleL);
     this.skiff.rightExhaust.scale.set(scaleR, scaleR, scaleR);
+    this.skiff.updateEngineDynamics(
+      dt,
+      this.controller.speed,
+      this.controller.yawRate,
+      this.controller.effLeft,
+      this.controller.effRight
+    );
 
     // desktop: animate the levers from the keyboard ramps (VR hands drive
     // them directly through GrabSystem)
