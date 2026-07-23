@@ -3,6 +3,7 @@ import { CraftStats } from '../garage/Loadout';
 import {
   crossedTrackT,
   TRACK_JUMPS,
+  TRACK_OBSTACLES,
   Track,
   tInRange,
   wrap01
@@ -62,9 +63,20 @@ export class CraftController {
   private onCollision: ((e: CollisionEvent) => void) | null = null;
   private verticalVelocity = 0;
   private pitRecoveryCooldown = 0;
+  private readonly obstacleColliders: { center: THREE.Vector3; radius: number }[];
 
   constructor(public stats: CraftStats, private track: Track) {
     this.hull = stats.hullMax;
+    this.obstacleColliders = TRACK_OBSTACLES.map((obstacle) => ({
+      center: track
+        .posAt(obstacle.t)
+        .addScaledVector(
+          track.sideAt(obstacle.t),
+          obstacle.laneOffset * track.halfWidthAt(obstacle.t) * 0.72
+        ),
+      // Includes the engine span so visible contact matches gameplay contact.
+      radius: obstacle.radius + 2.4
+    }));
   }
 
   setCollisionHandler(fn: (e: CollisionEvent) => void): void {
@@ -234,6 +246,35 @@ export class CraftController {
         this.applyEngineDamage(sideSign, catastrophic ? 110 : impact * 52);
         this.speed *= 1 - impact * 0.42;
         this.yawRate += sideSign * impact * 1.1;
+        this.collisionShake = 1;
+        this.onCollision?.({ side: sideSign, impact });
+      }
+    }
+
+    // Large boulders are physical hazards, not decoration. Push the craft out
+    // of their footprint and damage the engine on the impact side.
+    for (const obstacle of this.obstacleColliders) {
+      const away = this.position.clone().sub(obstacle.center);
+      away.y = 0;
+      const distance = away.length();
+      if (distance >= obstacle.radius) continue;
+
+      if (distance < 0.001) away.copy(sideVec);
+      else away.multiplyScalar(1 / distance);
+      this.position.addScaledVector(away, obstacle.radius - distance);
+
+      const sideSign = (-away.dot(sideVec) >= 0 ? 1 : -1) as 1 | -1;
+      const impact = Math.min(
+        1,
+        (this.speed / Math.max(1, this.stats.topSpeed)) *
+          (0.38 + (obstacle.radius - distance) * 0.16)
+      );
+      if (impact > 0.06 && this.collisionShake < 0.35) {
+        const catastrophic = this.speed / Math.max(1, this.stats.topSpeed) > 0.92;
+        this.applyDamage(impact * 16);
+        this.applyEngineDamage(sideSign, catastrophic ? 110 : impact * 60);
+        this.speed *= 1 - impact * 0.58;
+        this.yawRate -= sideSign * impact * 1.25;
         this.collisionShake = 1;
         this.onCollision?.({ side: sideSign, impact });
       }

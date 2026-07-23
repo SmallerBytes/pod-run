@@ -26,6 +26,31 @@ export interface JumpFeature {
  */
 export const TRACK_JUMPS: readonly JumpFeature[] = [];
 
+export interface TrackObstacle {
+  /** Position around the closed course. */
+  t: number;
+  /** Lane position from -1 (left edge) to +1 (right edge). */
+  laneOffset: number;
+  radius: number;
+  height: number;
+}
+
+/** Large, isolated boulders with enough open lane remaining to dodge them. */
+export const TRACK_OBSTACLES: readonly TrackObstacle[] = [
+  { t: 0.055, laneOffset: -0.38, radius: 2.8, height: 5.2 },
+  { t: 0.12, laneOffset: 0.42, radius: 3.2, height: 6.1 },
+  { t: 0.19, laneOffset: -0.25, radius: 2.5, height: 4.8 },
+  { t: 0.28, laneOffset: 0.32, radius: 3.5, height: 6.5 },
+  { t: 0.36, laneOffset: -0.44, radius: 3, height: 5.8 },
+  { t: 0.45, laneOffset: 0.18, radius: 2.7, height: 5.1 },
+  { t: 0.54, laneOffset: -0.3, radius: 3.4, height: 6.2 },
+  { t: 0.63, laneOffset: 0.4, radius: 2.6, height: 5 },
+  { t: 0.72, laneOffset: -0.2, radius: 3.1, height: 5.7 },
+  { t: 0.81, laneOffset: 0.36, radius: 3.6, height: 6.8 },
+  { t: 0.89, laneOffset: -0.4, radius: 2.9, height: 5.4 },
+  { t: 0.95, laneOffset: 0.25, radius: 3.2, height: 6 }
+];
+
 export function tInRange(t: number, start: number, end: number): boolean {
   const wrapped = wrap01(t);
   return start <= end

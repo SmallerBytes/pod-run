@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { TRACK_JUMPS, Track, tInRange } from './TrackProgress';
+import { TRACK_JUMPS, TRACK_OBSTACLES, Track, tInRange } from './TrackProgress';
 
 /**
  * Builds all static visuals for Rustmere Cut: a clearly contrasting textured
@@ -8,6 +8,7 @@ import { TRACK_JUMPS, Track, tInRange } from './TrackProgress';
  */
 export function buildTrackScenery(scene: THREE.Scene, track: Track): void {
   scene.add(buildRibbon(track));
+  scene.add(buildBoulderObstacles(track));
   scene.add(buildTrackBarricades(track));
   scene.add(buildJumpFeatures(track));
   scene.add(buildArchesAndGates(track));
@@ -122,7 +123,7 @@ function buildCenterDashes(track: Track): THREE.InstancedMesh {
 }
 
 /**
- * Low segmented safety barriers following both outer track lines. They sit
+ * Tall segmented safety barriers following both outer track lines. They sit
  * just outside the painted edge strips, leaving the full racing ribbon clear.
  * Instance colors alternate for strong visibility at racing speed.
  */
@@ -130,7 +131,8 @@ function buildTrackBarricades(track: Track): THREE.InstancedMesh {
   const spacing = 9;
   const countPerSide = Math.max(1, Math.floor(track.lapLength / spacing));
   const total = countPerSide * 2;
-  const geometry = new THREE.BoxGeometry(0.55, 0.9, spacing * 0.88);
+  const barrierHeight = 2.4;
+  const geometry = new THREE.BoxGeometry(0.65, barrierHeight, spacing * 0.88);
   const material = new THREE.MeshStandardMaterial({
     color: 0xffffff,
     roughness: 0.72,
@@ -149,7 +151,7 @@ function buildTrackBarricades(track: Track): THREE.InstancedMesh {
       const side = track.sideAt(t);
       const tangent = track.tangentAt(t);
       dummy.position.copy(p).addScaledVector(side, sign * (track.halfWidthAt(t) + 0.5));
-      dummy.position.y += 0.5;
+      dummy.position.y += barrierHeight * 0.5;
       dummy.rotation.set(0, Math.atan2(tangent.x, tangent.z), 0);
       dummy.scale.setScalar(isPitT(t) ? 0 : 1);
       dummy.updateMatrix();
@@ -161,6 +163,35 @@ function buildTrackBarricades(track: Track): THREE.InstancedMesh {
   barriers.instanceMatrix.needsUpdate = true;
   if (barriers.instanceColor) barriers.instanceColor.needsUpdate = true;
   return barriers;
+}
+
+/** Big low-poly rocks placed on the racing surface as real slalom hazards. */
+function buildBoulderObstacles(track: Track): THREE.Group {
+  const group = new THREE.Group();
+  const geometry = new THREE.DodecahedronGeometry(1, 1);
+  const materials = [
+    new THREE.MeshStandardMaterial({ color: 0x694633, roughness: 0.96 }),
+    new THREE.MeshStandardMaterial({ color: 0x7a5138, roughness: 0.94 }),
+    new THREE.MeshStandardMaterial({ color: 0x5d4031, roughness: 0.98 })
+  ];
+
+  TRACK_OBSTACLES.forEach((obstacle, index) => {
+    const p = track.posAt(obstacle.t);
+    const side = track.sideAt(obstacle.t);
+    const laneDistance = obstacle.laneOffset * track.halfWidthAt(obstacle.t) * 0.72;
+    const boulder = new THREE.Mesh(geometry, materials[index % materials.length]);
+    boulder.position.copy(p).addScaledVector(side, laneDistance);
+    boulder.position.y += obstacle.height * 0.5;
+    boulder.rotation.set(index * 0.73, index * 1.17, index * 0.41);
+    boulder.scale.set(
+      obstacle.radius * (0.9 + (index % 3) * 0.08),
+      obstacle.height * 0.5,
+      obstacle.radius * (0.84 + (index % 2) * 0.13)
+    );
+    group.add(boulder);
+  });
+
+  return group;
 }
 
 function isPitT(t: number): boolean {
