@@ -146,11 +146,14 @@ export class CraftController {
     const offset = this.position.clone().sub(center);
     const lateral = offset.dot(sideVec);
 
-    this.inSoftSand = Math.abs(lateral) > hw * 0.72;
+    // Hard wall boundary is now the distant cliff face (hw + 20m) so the
+    // raceable lane never has an invisible collision. The walls are far enough
+    // that soft sand only begins at the cliff foot, not in the middle of the track.
+    const laneMargin = hw + 22;
+    this.inSoftSand = Math.abs(lateral) > hw + 12;
 
-    const margin = hw - 1.6;
-    if (Math.abs(lateral) > margin) {
-      const overshoot = Math.abs(lateral) - margin;
+    if (Math.abs(lateral) > laneMargin) {
+      const overshoot = Math.abs(lateral) - laneMargin;
       const sideSign = (lateral > 0 ? 1 : -1) as 1 | -1;
       this.position.addScaledVector(sideVec, -sideSign * overshoot);
       const impact = Math.min(1, (this.speed / this.stats.topSpeed) * (0.35 + overshoot * 0.4));
