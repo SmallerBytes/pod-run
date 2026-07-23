@@ -40,7 +40,7 @@ export class HudDiegetic {
     this.group.add(this.speedCanvas.mesh(0.17, 0.085, { x: -0.24, y: 0.045, z: 0.017 }));
     this.group.add(this.raceCanvas.mesh(0.17, 0.085, { x: 0.24, y: 0.045, z: 0.017 }));
     this.group.add(this.navCanvas.mesh(0.16, 0.16, { x: 0, y: 0.055, z: 0.017 }));
-    this.group.add(this.messageCanvas.mesh(0.6, 0.15, { x: 0, y: 0.26, z: 0.0 }));
+    this.group.add(this.messageCanvas.mesh(0.32, 0.055, { x: 0, y: 0.2, z: 0.0 }));
 
     // bars along the bottom of the panel
     this.barLeft = new Bar(0.13, '#ff8c2a', 'L');
@@ -225,13 +225,13 @@ export class HudDiegetic {
     ctx.clearRect(0, 0, w, h);
     if (this.messageText) {
       ctx.fillStyle = 'rgba(12, 9, 6, 0.72)';
-      roundRect(ctx, 8, 8, w - 16, h - 16, 18);
+      roundRect(ctx, 16, 28, w - 32, h - 56, 10);
       ctx.fill();
       ctx.fillStyle = this.messageColor;
-      ctx.font = 'bold 72px monospace';
+      ctx.font = 'bold 28px monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(this.messageText, w / 2, h / 2 + 4);
+      ctx.fillText(this.messageText, w / 2, h / 2 + 2);
     }
     this.messageCanvas.commit();
   }

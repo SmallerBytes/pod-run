@@ -15,6 +15,8 @@ const AI_COUNT = 4;
 
 interface InputProvider {
   getInput(): ThrustInput & { leftHeld: boolean; rightHeld: boolean };
+  xHoldSeconds?: number;
+  xHoldCompleted?: boolean;
 }
 
 /**
@@ -166,9 +168,18 @@ export class RaceSession {
     }
     this.lastPlace = place;
 
-    // limp-mode message
-    if (racing && this.controller.limpMode) {
-      this.hud.showMessage('HULL CRITICAL', 1.5, '#ff4a3a');
+    // limp-mode / repair (hold X for 5s)
+    const xHold = input.xHoldSeconds ?? 0;
+    const xDone = !!input.xHoldCompleted;
+    if (racing && xDone) {
+      this.controller.repairEngines();
+      this.hud.showMessage('ENGINES REPAIRED', 2, '#6fce6f');
+      this.audio.lapDing();
+    } else if (racing && xHold > 0.15 && (this.controller.limpMode || this.controller.hullFraction < 1)) {
+      const secs = Math.min(5, Math.ceil(5 - xHold));
+      this.hud.showMessage(`REPAIR ${secs}s`, 0.35, '#9fd8ff');
+    } else if (racing && this.controller.limpMode) {
+      this.hud.showMessage('HULL CRITICAL — HOLD X 5s', 1.2, '#ff4a3a');
     }
 
     // FX + audio + haptics

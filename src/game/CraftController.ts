@@ -182,6 +182,13 @@ export class CraftController {
     if (this.hull <= 0) this.limpMode = true;
   }
 
+  /** Full engine/hull repair — clears limp mode and restores capacity. */
+  repairEngines(): void {
+    this.hull = this.stats.hullMax;
+    this.limpMode = false;
+    this.heat = Math.min(this.heat, 0.4);
+  }
+
   /** Push from another racer bumping us. */
   shove(sideSign: -1 | 1, strength: number): void {
     const sideVec = this.track.sideAt(this.trackT);

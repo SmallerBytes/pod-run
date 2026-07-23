@@ -42,6 +42,12 @@ export class GrabSystem {
   aButtonJustPressed = false;
   private aWasDown = false;
 
+  /** Seconds the left-controller X button has been held continuously. */
+  xHoldSeconds = 0;
+  /** True the frame a 5s X hold completes (consumed by the race session). */
+  xHoldCompleted = false;
+  private xWasHeldLong = false;
+
   private tmpVec = new THREE.Vector3();
   private tmpVec2 = new THREE.Vector3();
 
@@ -136,6 +142,7 @@ export class GrabSystem {
   /** Drive levers from held hands, ease released levers, read roll lean. */
   update(dt: number): void {
     let aDown = false;
+    let xDown = false;
     let leanSum = 0;
     let leanCount = 0;
 
@@ -143,7 +150,11 @@ export class GrabSystem {
 
     for (const hand of this.hands) {
       const gp = hand.inputSource?.gamepad;
-      if (gp && gp.buttons[4]?.pressed) aDown = true;
+      // xr-standard: buttons[4] is A on right, X on left
+      if (gp && gp.buttons[4]?.pressed) {
+        if (hand.handedness === 'left') xDown = true;
+        else aDown = true;
+      }
 
       const target = this.leverFor(hand);
       const mat = (hand.visual.children[0] as THREE.Mesh).material as THREE.MeshStandardMaterial;
@@ -190,9 +201,17 @@ export class GrabSystem {
     const targetLean = leanCount > 0 ? leanSum / leanCount : 0;
     this.lean = THREE.MathUtils.lerp(this.lean, targetLean, 1 - Math.exp(-dt * 5));
 
+    // A (right) for overdrive / restart tap
     this.aButtonJustPressed = aDown && !this.aWasDown;
     this.aWasDown = aDown;
     this.aButtonPressed = aDown;
+
+    // X (left) hold-to-repair — 5 continuous seconds
+    if (xDown) this.xHoldSeconds += dt;
+    else this.xHoldSeconds = 0;
+    const heldLong = this.xHoldSeconds >= 5;
+    this.xHoldCompleted = heldLong && !this.xWasHeldLong;
+    this.xWasHeldLong = heldLong;
   }
 
   getInput(): ThrustInput & { leftHeld: boolean; rightHeld: boolean } {
@@ -203,7 +222,10 @@ export class GrabSystem {
       if (!hand.holding) continue;
       if (hand.handedness === 'left') leftHeld = true;
       if (hand.handedness === 'right') rightHeld = true;
-      if (hand.inputSource?.gamepad?.buttons[4]?.pressed) overdrive = true;
+      // Overdrive is A (right controller) only — X is reserved for repair hold
+      if (hand.handedness === 'right' && hand.inputSource?.gamepad?.buttons[4]?.pressed) {
+        overdrive = true;
+      }
     }
     return {
       left: this.thrustLeft,

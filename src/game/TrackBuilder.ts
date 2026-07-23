@@ -94,13 +94,13 @@ function buildCliffRibbon(track: Track, s: -1 | 1, seed: number): THREE.Mesh {
     const side = track.sideAt(t);
     const hw = track.halfWidthAt(t);
 
-    // low-frequency drift; integer wave counts keep the loop seamless
+    // Cliff face stays well outside the raceable lane — never pulls inward
     const h = THREE.MathUtils.clamp(
-      13 + 8 * Math.sin(tau * 3 * t + ph[0]) + 5 * Math.sin(tau * 7 * t + ph[1]) + 3 * Math.sin(tau * 13 * t + ph[2]),
-      6,
-      26
+      14 + 7 * Math.sin(tau * 3 * t + ph[0]) + 4 * Math.sin(tau * 7 * t + ph[1]),
+      8,
+      28
     );
-    const dist = hw + 9 + 5 * Math.sin(tau * 2 * t + ph[3]) + 2.5 * Math.sin(tau * 5 * t + ph[4]);
+    const dist = hw + 28 + Math.max(0, 6 * Math.sin(tau * 2 * t + ph[3]));
     // subtle per-ring shade variation so long walls don't look extruded-flat
     const shade = 0.9 + 0.14 * Math.sin(tau * 11 * t + ph[5]);
 
@@ -129,31 +129,15 @@ function buildCliffRibbon(track: Track, s: -1 | 1, seed: number): THREE.Mesh {
 
 function buildArchesAndGates(track: Track): THREE.Group {
   const group = new THREE.Group();
-  const metal = new THREE.MeshLambertMaterial({ color: 0x4a4238 });
   const rust = new THREE.MeshLambertMaterial({ color: 0x8c4a1e });
   const bannerMat = new THREE.MeshBasicMaterial({ color: 0xff8c2a, side: THREE.DoubleSide });
 
-  // Side pylons only — no overhead beams (those looked like rock bridging the canyon)
-  for (let i = 0; i < 12; i++) {
-    const t = i / 12 + 0.02;
-    const p = track.posAt(t);
-    const side = track.sideAt(t);
-    const hw = track.halfWidthAt(t) + 2;
-
-    for (const s of [-1, 1]) {
-      const pylon = new THREE.Mesh(new THREE.BoxGeometry(1.2, 10, 1.2), i % 3 === 0 ? rust : metal);
-      pylon.position.copy(p).addScaledVector(side, s * hw);
-      pylon.position.y += 5;
-      group.add(pylon);
-    }
-  }
-
-  // start/finish gate with banner
+  // Start/finish only — racing surface stays clear (no side pylons / checkpoint cones)
   {
     const t = 0;
     const p = track.posAt(t);
     const side = track.sideAt(t);
-    const hw = track.halfWidthAt(t) + 1;
+    const hw = track.halfWidthAt(t) + 4;
     for (const s of [-1, 1]) {
       const pylon = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 1.1, 18, 8), rust);
       pylon.position.copy(p).addScaledVector(side, s * hw);
@@ -165,21 +149,6 @@ function buildArchesAndGates(track: Track): THREE.Group {
     banner.position.y += 16;
     banner.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), side);
     group.add(banner);
-  }
-
-  // checkpoint pylons (subtle glow markers used by the nav plate arrow)
-  const cpMat = new THREE.MeshBasicMaterial({ color: 0x9fd8ff });
-  for (let i = 0; i < track.checkpointCount; i++) {
-    const t = track.checkpointT(i);
-    const p = track.posAt(t);
-    const side = track.sideAt(t);
-    const hw = track.halfWidthAt(t) + 0.5;
-    for (const s of [-1, 1]) {
-      const pylon = new THREE.Mesh(new THREE.ConeGeometry(0.5, 3.2, 6), cpMat);
-      pylon.position.copy(p).addScaledVector(side, s * hw);
-      pylon.position.y += 1.6;
-      group.add(pylon);
-    }
   }
 
   return group;

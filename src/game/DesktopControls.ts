@@ -5,7 +5,8 @@ import { ThrustInput } from './CraftController';
  * Desktop fallback for iterating without a headset:
  * hold Q = push left throttle, P = push right throttle (release to ease off),
  * A / D = lean left / right (slow steer), Shift = overdrive,
- * mouse (pointer lock) = look around the pod, R = restart after finish.
+ * hold X for 5s = repair engines, mouse (pointer lock) = look around the pod,
+ * R = restart after finish.
  */
 export class DesktopControls {
   private keys = new Set<string>();
@@ -16,6 +17,10 @@ export class DesktopControls {
   private leanRamp = 0;
 
   restartRequested = false;
+  /** Seconds X has been held; RaceSession uses this for engine repair. */
+  xHoldSeconds = 0;
+  xHoldCompleted = false;
+  private xWasHeldLong = false;
 
   constructor(private camera: THREE.PerspectiveCamera, domElement: HTMLElement) {
     window.addEventListener('keydown', (e) => {
@@ -42,6 +47,12 @@ export class DesktopControls {
     // lean builds up slowly and recenters when released
     const leanTarget = (this.keys.has('d') ? 1 : 0) - (this.keys.has('a') ? 1 : 0);
     this.leanRamp = THREE.MathUtils.lerp(this.leanRamp, leanTarget, 1 - Math.exp(-dt * 3.5));
+
+    if (this.keys.has('x')) this.xHoldSeconds += dt;
+    else this.xHoldSeconds = 0;
+    const heldLong = this.xHoldSeconds >= 5;
+    this.xHoldCompleted = heldLong && !this.xWasHeldLong;
+    this.xWasHeldLong = heldLong;
 
     this.camera.rotation.set(this.lookPitch, this.lookYaw, 0, 'YXZ');
   }
