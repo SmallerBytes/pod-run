@@ -123,15 +123,13 @@ export class CraftController {
       this.speed = Math.max(targetSpeed, this.speed - (accel * 0.9 + (this.inSoftSand ? 14 : 0)) * dt);
     }
 
-    // yaw: LEAN is the primary steering signal (slow, deliberate), with a
-    // small differential-thrust assist so an uneven push still nudges the nose
-    const diff = effR - effL;
-    const speedFactor = 0.4 + 0.6 * Math.min(1, this.speed / this.stats.topSpeed);
-    const leanYawMax = 0.55 * (this.stats.turnRate / 1.35);
-    const lean = THREE.MathUtils.clamp(raw.lean, -1, 1);
-    const targetYawRate = -(lean * leanYawMax + diff * this.stats.turnRate * 0.25) * speedFactor;
-    // heavy smoothing = sluggish, weighty lean response
-    this.yawRate = THREE.MathUtils.lerp(this.yawRate, targetYawRate, 1 - Math.exp(-dt * 2.5));
+    // Pure differential-thrust steering:
+    // more LEFT-engine throttle turns RIGHT; more RIGHT turns LEFT.
+    // Controller roll/handle lean has no steering effect.
+    const differential = effL - effR;
+    const speedFactor = 0.45 + 0.55 * Math.min(1, this.speed / this.stats.topSpeed);
+    const targetYawRate = -differential * this.stats.turnRate * 1.05 * speedFactor;
+    this.yawRate = THREE.MathUtils.lerp(this.yawRate, targetYawRate, 1 - Math.exp(-dt * 4));
     this.yaw += this.yawRate * dt;
 
     // integrate position
@@ -146,25 +144,11 @@ export class CraftController {
     const offset = this.position.clone().sub(center);
     const lateral = offset.dot(sideVec);
 
-    // Hard wall boundary is now the distant cliff face (hw + 20m) so the
-    // raceable lane never has an invisible collision. The walls are far enough
-    // that soft sand only begins at the cliff foot, not in the middle of the track.
-    const laneMargin = hw + 22;
-    this.inSoftSand = Math.abs(lateral) > hw + 12;
-
-    if (Math.abs(lateral) > laneMargin) {
-      const overshoot = Math.abs(lateral) - laneMargin;
-      const sideSign = (lateral > 0 ? 1 : -1) as 1 | -1;
-      this.position.addScaledVector(sideVec, -sideSign * overshoot);
-      const impact = Math.min(1, (this.speed / this.stats.topSpeed) * (0.35 + overshoot * 0.4));
-      if (impact > 0.08 && this.collisionShake < 0.35) {
-        this.applyDamage(impact * 16);
-        this.speed *= 1 - impact * 0.5;
-        this.yawRate += sideSign * impact * 1.4;
-        this.collisionShake = 1;
-        this.onCollision?.({ side: sideSign, impact });
-      }
-    }
+    // Open-desert layout: no invisible lane clamp, wall collision, or off-track
+    // drag. Ground texture is visual-only and never affects the vehicle.
+    void hw;
+    void lateral;
+    this.inSoftSand = false;
     this.collisionShake = Math.max(0, this.collisionShake - dt * 2.2);
 
     // hover height follows the canyon floor

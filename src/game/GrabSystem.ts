@@ -22,9 +22,9 @@ interface HandState {
 /**
  * VR throttle hands. Squeeze (grip button) near a motorcycle-style grip to
  * latch onto it; while held, PUSHING the lever forward feeds that thruster
- * and PULLING back eases off. Leaning the controllers left/right (roll, plus
- * a little lateral drift) steers — slowly. Release and the lever settles back
- * to idle.
+ * and PULLING back eases off. Steering is entirely differential: more left
+ * throttle turns right and more right throttle turns left. Handle roll/lean
+ * does not steer. Release and the lever settles back to idle.
  */
 export class GrabSystem {
   private hands: HandState[] = [];
@@ -230,7 +230,8 @@ export class GrabSystem {
     return {
       left: this.thrustLeft,
       right: this.thrustRight,
-      lean: this.lean,
+      // Handle roll is intentionally ignored; steering comes from throttle split.
+      lean: 0,
       overdrive,
       leftHeld,
       rightHeld

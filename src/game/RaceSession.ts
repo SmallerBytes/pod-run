@@ -11,7 +11,8 @@ import { Track, ProgressTracker } from './TrackProgress';
 
 export type RaceState = 'idle' | 'countdown' | 'racing' | 'finished';
 
-const AI_COUNT = 4;
+// Solo testing for now; restore rivals by raising this count.
+const AI_COUNT = 0;
 
 interface InputProvider {
   getInput(): ThrustInput & { leftHeld: boolean; rightHeld: boolean };

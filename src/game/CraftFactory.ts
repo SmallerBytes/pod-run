@@ -51,7 +51,6 @@ interface Mats {
   cable: THREE.MeshStandardMaterial;
   leather: THREE.MeshStandardMaterial;
   guard: THREE.MeshStandardMaterial;
-  glow: THREE.MeshBasicMaterial;
 }
 
 export function buildSkiffFromBuild(
@@ -66,8 +65,7 @@ export function buildSkiffFromBuild(
     dark: new THREE.MeshStandardMaterial({ color: 0x1c1a17, roughness: 0.9, metalness: 0.2 }),
     cable: new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 0.8, metalness: 0.3 }),
     leather: new THREE.MeshStandardMaterial({ color: 0x7a4a2a, roughness: 0.85, metalness: 0.05 }),
-    guard: new THREE.MeshStandardMaterial({ color: 0xdfe2e6, roughness: 0.35, metalness: 0.5 }),
-    glow: new THREE.MeshBasicMaterial({ color: 0xff8c2a })
+    guard: new THREE.MeshStandardMaterial({ color: 0xdfe2e6, roughness: 0.35, metalness: 0.5 })
   };
 
   const group = new THREE.Group();
@@ -89,14 +87,7 @@ export function buildSkiffFromBuild(
   buildCable(visual, build.bricks.cableL, -1, engL.length, mats);
   buildCable(visual, build.bricks.cableR, 1, engR.length, mats);
 
-  const tetherLen = 4.6 - 0.3;
-  const tether = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.05, 0.05, tetherLen, 6),
-    new THREE.MeshBasicMaterial({ color: 0xb8e6ff, transparent: true, opacity: 0.85 })
-  );
-  tether.rotation.z = Math.PI / 2;
-  tether.position.set(0, 0.9, -6.2);
-  visual.add(tether);
+  buildEnergyTether(visual, 4.6 - 0.3);
 
   // ---------- cockpit fittings ----------
   const leftLever = new THREE.Group();
@@ -489,12 +480,174 @@ function buildEngine(
     y: dims.r * 1.0
   });
 
-  const exhaust = new THREE.Mesh(new THREE.ConeGeometry(dims.r * 0.7, 1.7, 10), mats.glow.clone());
+  const exhaust = buildAnimatedExhaust(dims.r * 0.7);
   exhaust.rotation.x = Math.PI / 2;
-  exhaust.position.z = dims.len / 2 + 0.85;
+  exhaust.position.z = dims.len / 2 + 1.05;
   g.add(exhaust);
 
   return { group: g, exhaust, length: dims.len };
+}
+
+/**
+ * Layered additive flame with a hot white core, orange edge, animated
+ * distortion, and flickering length. Animation is driven during rendering,
+ * so player and AI engines share it without another update system.
+ */
+function buildAnimatedExhaust(radius: number): THREE.Mesh {
+  const makeFlameMaterial = (
+    core: THREE.ColorRepresentation,
+    edge: THREE.ColorRepresentation,
+    opacity: number,
+    phase: number
+  ) => {
+    const uniforms = {
+      uTime: { value: 0 },
+      uCore: { value: new THREE.Color(core) },
+      uEdge: { value: new THREE.Color(edge) },
+      uOpacity: { value: opacity }
+    };
+    const material = new THREE.ShaderMaterial({
+      uniforms,
+      vertexShader: `
+        varying vec2 vUv;
+        uniform float uTime;
+        void main() {
+          vUv = uv;
+          vec3 p = position;
+          float along = clamp(uv.y, 0.0, 1.0);
+          float flicker = 1.0 + 0.10 * sin(uTime * 15.0 + along * 12.0)
+                              + 0.045 * sin(uTime * 29.0 + along * 25.0);
+          p.y *= flicker;
+          float wave = sin(uTime * 12.0 + p.y * 9.0) * (0.018 + along * 0.035);
+          p.x += wave;
+          p.z += cos(uTime * 10.0 + p.y * 8.0) * (0.012 + along * 0.025);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+        }
+      `,
+      fragmentShader: `
+        varying vec2 vUv;
+        uniform float uTime;
+        uniform vec3 uCore;
+        uniform vec3 uEdge;
+        uniform float uOpacity;
+        void main() {
+          float radial = abs(vUv.x - 0.5) * 2.0;
+          float edgeFade = smoothstep(1.0, 0.15, radial);
+          float lengthFade = smoothstep(0.02, 0.18, vUv.y)
+                           * smoothstep(1.0, 0.48, vUv.y);
+          float pulse = 0.82 + 0.18 * sin(uTime * 18.0 + vUv.y * 20.0);
+          vec3 color = mix(uCore, uEdge, radial * 0.78 + vUv.y * 0.22);
+          gl_FragColor = vec4(color, edgeFade * lengthFade * pulse * uOpacity);
+        }
+      `,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide
+    });
+    return { material, uniforms, phase };
+  };
+
+  const outerShader = makeFlameMaterial(0xfff2b0, 0xff4a08, 0.82, 0);
+  const exhaust = new THREE.Mesh(
+    new THREE.ConeGeometry(radius, 2.35, 16, 1, true),
+    outerShader.material
+  );
+  exhaust.onBeforeRender = () => {
+    outerShader.uniforms.uTime.value = performance.now() * 0.001 + outerShader.phase;
+  };
+
+  const innerShader = makeFlameMaterial(0xffffff, 0x69d8ff, 0.95, 1.7);
+  const inner = new THREE.Mesh(
+    new THREE.ConeGeometry(radius * 0.48, 1.65, 12, 1, true),
+    innerShader.material
+  );
+  inner.position.y = -0.08;
+  inner.onBeforeRender = () => {
+    innerShader.uniforms.uTime.value = performance.now() * 0.001 + innerShader.phase;
+  };
+  exhaust.add(inner);
+
+  // Bright nozzle bloom at the flame root.
+  const bloom = new THREE.Mesh(
+    new THREE.SphereGeometry(radius * 0.62, 12, 8),
+    new THREE.MeshBasicMaterial({
+      color: 0xffd27a,
+      transparent: true,
+      opacity: 0.8,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    })
+  );
+  bloom.position.y = -1.08;
+  bloom.scale.y = 0.35;
+  exhaust.add(bloom);
+
+  return exhaust;
+}
+
+/**
+ * Animated energy coupler: a bright pulsing core plus three independently
+ * wandering electrical arcs. It has no collision geometry.
+ */
+function buildEnergyTether(parent: THREE.Group, length: number): void {
+  const tether = new THREE.Group();
+  tether.position.set(0, 0.9, -6.2);
+  parent.add(tether);
+
+  const coreMat = new THREE.MeshBasicMaterial({
+    color: 0xc9f4ff,
+    transparent: true,
+    opacity: 0.9,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  });
+  const core = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, length, 8), coreMat);
+  core.rotation.z = Math.PI / 2;
+  core.onBeforeRender = () => {
+    const t = performance.now() * 0.001;
+    coreMat.opacity = 0.72 + Math.sin(t * 18) * 0.18;
+    const pulse = 0.9 + Math.sin(t * 23) * 0.12;
+    core.scale.set(pulse, 1, pulse);
+  };
+  tether.add(core);
+
+  const points = 32;
+  for (let arcIndex = 0; arcIndex < 3; arcIndex++) {
+    const positions = new Float32Array(points * 3);
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const material = new THREE.LineBasicMaterial({
+      color: arcIndex === 1 ? 0x76cfff : 0xe2fbff,
+      transparent: true,
+      opacity: 0.8,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    });
+    const arc = new THREE.Line(geometry, material);
+    const phase = arcIndex * 2.17;
+    arc.onBeforeRender = () => {
+      const time = performance.now() * 0.001;
+      const attr = geometry.getAttribute('position') as THREE.BufferAttribute;
+      const arr = attr.array as Float32Array;
+      for (let i = 0; i < points; i++) {
+        const u = i / (points - 1);
+        const envelope = Math.sin(Math.PI * u);
+        arr[i * 3] = (u - 0.5) * length;
+        arr[i * 3 + 1] =
+          envelope *
+          (Math.sin(u * 31 + time * (15 + arcIndex * 2) + phase) * 0.055 +
+            Math.sin(u * 67 - time * 21 + phase) * 0.025);
+        arr[i * 3 + 2] =
+          envelope *
+          (Math.cos(u * 27 - time * (13 + arcIndex) + phase) * 0.05 +
+            Math.sin(u * 53 + time * 17 + phase) * 0.022);
+      }
+      attr.needsUpdate = true;
+      material.opacity = 0.5 + 0.4 * Math.abs(Math.sin(time * 11 + phase));
+    };
+    tether.add(arc);
+  }
 }
 
 // ============================== cable kits ==============================

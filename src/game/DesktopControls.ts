@@ -3,8 +3,8 @@ import { ThrustInput } from './CraftController';
 
 /**
  * Desktop fallback for iterating without a headset:
- * hold Q = push left throttle, P = push right throttle (release to ease off),
- * A / D = lean left / right (slow steer), Shift = overdrive,
+ * hold Q = push left throttle / turn right, P = push right throttle / turn left,
+ * hold both for straight-line power (release to ease off), Shift = overdrive,
  * hold X for 5s = repair engines, mouse (pointer lock) = look around the pod,
  * R = restart after finish.
  */
@@ -14,7 +14,6 @@ export class DesktopControls {
   private lookPitch = 0;
   private leftRamp = 0;
   private rightRamp = 0;
-  private leanRamp = 0;
 
   restartRequested = false;
   /** Seconds X has been held; RaceSession uses this for engine repair. */
@@ -44,10 +43,6 @@ export class DesktopControls {
     this.leftRamp = ramp(this.keys.has('q'), this.leftRamp);
     this.rightRamp = ramp(this.keys.has('p'), this.rightRamp);
 
-    // lean builds up slowly and recenters when released
-    const leanTarget = (this.keys.has('d') ? 1 : 0) - (this.keys.has('a') ? 1 : 0);
-    this.leanRamp = THREE.MathUtils.lerp(this.leanRamp, leanTarget, 1 - Math.exp(-dt * 3.5));
-
     if (this.keys.has('x')) this.xHoldSeconds += dt;
     else this.xHoldSeconds = 0;
     const heldLong = this.xHoldSeconds >= 5;
@@ -61,7 +56,7 @@ export class DesktopControls {
     return {
       left: this.leftRamp,
       right: this.rightRamp,
-      lean: this.leanRamp,
+      lean: 0,
       overdrive: this.keys.has('shift'),
       leftHeld: this.leftRamp > 0.01,
       rightHeld: this.rightRamp > 0.01

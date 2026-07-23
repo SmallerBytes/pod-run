@@ -52,9 +52,9 @@ export const HULL_KITS: Record<string, HullKit> = {
 };
 
 export const ENGINE_KITS: Record<string, EngineKit> = {
-  torque: { name: 'Torque', desc: 'Strong low-end pull', accel: 34, topSpeed: 52, heatRate: 0.09, turn: 1.3 },
-  surge: { name: 'Surge', desc: 'Mid-range all-rounder', accel: 27, topSpeed: 60, heatRate: 0.12, turn: 1.05 },
-  spike: { name: 'Spike', desc: 'Blistering top end, runs hot', accel: 21, topSpeed: 70, heatRate: 0.18, turn: 0.85 }
+  torque: { name: 'Torque', desc: 'Strong low-end pull', accel: 58, topSpeed: 88, heatRate: 0.09, turn: 1.3 },
+  surge: { name: 'Surge', desc: 'Mid-range all-rounder', accel: 50, topSpeed: 105, heatRate: 0.12, turn: 1.05 },
+  spike: { name: 'Spike', desc: 'Blistering top end, runs hot', accel: 42, topSpeed: 125, heatRate: 0.18, turn: 0.85 }
 };
 
 export const SEAT_KITS: Record<string, KitMeta> = {
@@ -178,8 +178,8 @@ export function computeStats(build: CraftBuild): CraftStats {
 export function statBars(build: CraftBuild): { label: string; value: number }[] {
   const s = computeStats(build);
   return [
-    { label: 'Top Speed', value: clamp01((s.topSpeed - 40) / 45) },
-    { label: 'Thrust', value: clamp01((s.accel - 12) / 30) },
+    { label: 'Top Speed', value: clamp01((s.topSpeed - 65) / 75) },
+    { label: 'Thrust', value: clamp01((s.accel - 25) / 45) },
     { label: 'Handling', value: clamp01((s.turnRate - 0.7) / 1.4) },
     { label: 'Hull', value: clamp01(s.hullMax / 160) },
     { label: 'Heat Load', value: clamp01(s.heatRate / 0.2) }
