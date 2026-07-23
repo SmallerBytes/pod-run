@@ -611,8 +611,9 @@ function buildThrottle(
   side: -1 | 1,
   mats: Mats
 ): void {
-  const x = side * 0.26;
-  const homeZ = -0.42;
+  // Pulled in tight beside the seat so VR hands don't have to reach forward
+  const x = side * 0.28;
+  const homeZ = -0.02;
 
   // Slide rail on the floor (shows the push/pull travel)
   const rail = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.025, LEVER_TRAVEL * 2 + 0.12), mats.dark);
@@ -641,15 +642,15 @@ function buildThrottle(
   elbow.position.set(0, 0.52, 0);
   lever.add(elbow);
 
-  // upper arm — leans up, outward and slightly forward to the grip
+  // upper arm — leans up, outward, and back toward the pilot
   const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.026, 0.46, 8), mats.dark);
-  upper.position.set(side * 0.03, 0.72, -0.05);
-  upper.rotation.set(-0.24, 0, side * -0.15);
+  upper.position.set(side * 0.03, 0.72, 0.08);
+  upper.rotation.set(0.28, 0, side * -0.15);
   lever.add(upper);
 
-  // handlebar grip at chest height, tilted up-and-outward like the reference
+  // handlebar grip at chest height, close to the hands
   const gripGroup = new THREE.Group();
-  gripGroup.position.set(side * 0.06, 0.92, -0.1);
+  gripGroup.position.set(side * 0.06, 0.9, 0.18);
   gripGroup.rotation.z = -side * (Math.PI / 2 - 0.35);
   lever.add(gripGroup);
 
