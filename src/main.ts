@@ -119,6 +119,7 @@ function exitToGarage(): void {
   studio.setVisible(true);
   session.state = 'idle';
   audio.setThrust(0, 0, 0);
+  audio.setBurner(false);
   audio.setOverheatWarning(false);
 }
 

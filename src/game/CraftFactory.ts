@@ -42,8 +42,8 @@ export interface SkiffRig {
 }
 
 export const LEVER_TRAVEL = 0.14; // metres of push/pull from neutral
-/** Lever z fraction the lever rests at when released (~idle thrust). */
-export const LEVER_IDLE_FRACTION = 0.72;
+/** Lever z fraction when released — 1.0 = zero thrust (homeZ + travel). */
+export const LEVER_IDLE_FRACTION = 1;
 
 export function leverZForThrust(lever: THREE.Object3D, thrust: number): number {
   const { homeZ, travel } = lever.userData as { homeZ: number; travel: number };
@@ -1401,8 +1401,8 @@ function buildThrottle(
   rail.position.set(x, 0.34, homeZ);
   parent.add(rail);
 
-  // Sliding lever assembly
-  lever.position.set(x, 0.365, homeZ);
+  // Sliding lever assembly — parked at the zero-thrust end of the rail
+  lever.position.set(x, 0.365, homeZ + LEVER_TRAVEL);
   lever.userData = { homeZ, travel: LEVER_TRAVEL };
   parent.add(lever);
 

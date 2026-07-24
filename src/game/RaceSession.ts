@@ -112,6 +112,9 @@ export class RaceSession {
     this.controller.reset(0, 0);
     this.tracker.t = 0;
     this.tracker.unwrapped = 0;
+    // Park throttles at zero so the craft does not creep at GO.
+    this.skiff.leftLever.position.z = leverZForThrust(this.skiff.leftLever, 0);
+    this.skiff.rightLever.position.z = leverZForThrust(this.skiff.rightLever, 0);
     this.syncSkiffTransform();
   }
 
@@ -217,7 +220,8 @@ export class RaceSession {
     const speedFactor = this.controller.speed / Math.max(1, this.controller.stats.topSpeed);
     this.dust.update(dt, this.controller.position, this.controller.yaw, this.controller.speed);
     this.audio.setThrust(this.controller.effLeft, this.controller.effRight, speedFactor);
-    this.audio.setOverheatWarning(this.controller.heat > 0.85 || this.controller.burnerActive);
+    this.audio.setBurner(this.controller.burnerActive);
+    this.audio.setOverheatWarning(this.controller.heat > 0.85);
 
     this.rumbleTimer += dt;
     if (this.rumbleTimer > 0.1) {

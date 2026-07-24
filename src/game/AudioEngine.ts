@@ -1,6 +1,7 @@
 /**
- * Procedural audio: twin thruster voices (saw + filtered noise), UI beeps,
- * crash bursts, and an overheat warble. No licensed audio anywhere.
+ * Procedural audio: twin thruster voices (saw + filtered noise), a dedicated
+ * afterburner rumble, UI beeps, crash bursts, and an overheat warble.
+ * No licensed audio anywhere.
  */
 export class AudioEngine {
   private ctx: AudioContext | null = null;
@@ -8,6 +9,7 @@ export class AudioEngine {
   private voices: ThrusterVoice[] = [];
   private warnOsc: OscillatorNode | null = null;
   private warnGain: GainNode | null = null;
+  private burner: BurnerVoice | null = null;
 
   start(): void {
     if (this.ctx) {
@@ -20,8 +22,9 @@ export class AudioEngine {
     this.master.connect(this.ctx.destination);
 
     this.voices = [new ThrusterVoice(this.ctx, this.master, -0.5), new ThrusterVoice(this.ctx, this.master, 0.5)];
+    this.burner = new BurnerVoice(this.ctx, this.master);
 
-    // overheat warble (silent until enabled)
+    // overheat warble (silent until enabled) — high chirp, not the burner
     this.warnOsc = this.ctx.createOscillator();
     this.warnOsc.type = 'square';
     this.warnOsc.frequency.value = 880;
@@ -34,6 +37,11 @@ export class AudioEngine {
   setThrust(left: number, right: number, speedFactor: number): void {
     this.voices[0]?.set(left, speedFactor);
     this.voices[1]?.set(right, speedFactor);
+  }
+
+  /** Deep explosion-style hum while Y-burner is engaged. */
+  setBurner(active: boolean): void {
+    this.burner?.set(active);
   }
 
   setOverheatWarning(active: boolean): void {
@@ -109,8 +117,10 @@ class ThrusterVoice {
   private oscGain: GainNode;
   private noiseGain: GainNode;
   private filter: BiquadFilterNode;
+  private ctx: AudioContext;
 
   constructor(ctx: AudioContext, out: AudioNode, pan: number) {
+    this.ctx = ctx;
     const panner = ctx.createStereoPanner();
     panner.pan.value = pan;
     panner.connect(out);
@@ -140,11 +150,7 @@ class ThrusterVoice {
     this.noiseGain.gain.value = 0;
     noise.connect(this.noiseGain).connect(this.filter);
     noise.start();
-
-    this.ctx = ctx;
   }
-
-  private ctx: AudioContext;
 
   set(thrust: number, speedFactor: number): void {
     const now = this.ctx.currentTime;
@@ -153,5 +159,92 @@ class ThrusterVoice {
     this.oscGain.gain.setTargetAtTime(t * 0.09, now, 0.08);
     this.noiseGain.gain.setTargetAtTime(t * 0.06 + speedFactor * 0.05, now, 0.1);
     this.filter.frequency.setTargetAtTime(250 + t * 900 + speedFactor * 600, now, 0.08);
+  }
+}
+
+/**
+ * Low afterburner voice: sub saw + slow amplitude pulse + heavily filtered
+ * blast noise. Reads as a sustained explosion hum, not a warning chirp.
+ */
+class BurnerVoice {
+  private ctx: AudioContext;
+  private sub: OscillatorNode;
+  private subGain: GainNode;
+  private pulse: OscillatorNode;
+  private pulseGain: GainNode;
+  private noiseGain: GainNode;
+  private filter: BiquadFilterNode;
+  private masterGain: GainNode;
+  private active = false;
+
+  constructor(ctx: AudioContext, out: AudioNode) {
+    this.ctx = ctx;
+    this.masterGain = ctx.createGain();
+    this.masterGain.gain.value = 0;
+    this.masterGain.connect(out);
+
+    this.filter = ctx.createBiquadFilter();
+    this.filter.type = 'lowpass';
+    this.filter.frequency.value = 140;
+    this.filter.Q.value = 0.7;
+    this.filter.connect(this.masterGain);
+
+    this.sub = ctx.createOscillator();
+    this.sub.type = 'sawtooth';
+    this.sub.frequency.value = 38;
+    this.subGain = ctx.createGain();
+    this.subGain.gain.value = 0.55;
+    this.sub.connect(this.subGain).connect(this.filter);
+    this.sub.start();
+
+    // Slow LFO gives the rumble a breathing "hum" instead of a flat tone.
+    this.pulse = ctx.createOscillator();
+    this.pulse.type = 'sine';
+    this.pulse.frequency.value = 3.2;
+    this.pulseGain = ctx.createGain();
+    this.pulseGain.gain.value = 0;
+    this.pulse.connect(this.pulseGain).connect(this.masterGain.gain);
+    this.pulse.start();
+
+    const noiseDur = 2.5;
+    const buffer = ctx.createBuffer(1, ctx.sampleRate * noiseDur, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      // Soften the blast with a gentle envelope so it feels explosive, not hissy.
+      const envelope = 0.65 + 0.35 * Math.sin((i / data.length) * Math.PI * 14);
+      data[i] = (Math.random() * 2 - 1) * envelope;
+    }
+    const noise = ctx.createBufferSource();
+    noise.buffer = buffer;
+    noise.loop = true;
+    this.noiseGain = ctx.createGain();
+    this.noiseGain.gain.value = 0.7;
+    const noiseFilter = ctx.createBiquadFilter();
+    noiseFilter.type = 'bandpass';
+    noiseFilter.frequency.value = 110;
+    noiseFilter.Q.value = 0.85;
+    noise.connect(this.noiseGain).connect(noiseFilter).connect(this.filter);
+    noise.start();
+  }
+
+  set(active: boolean): void {
+    if (active === this.active) return;
+    this.active = active;
+    const now = this.ctx.currentTime;
+    if (active) {
+      this.masterGain.gain.cancelScheduledValues(now);
+      this.masterGain.gain.setValueAtTime(Math.max(0.001, this.masterGain.gain.value), now);
+      this.masterGain.gain.exponentialRampToValueAtTime(0.28, now + 0.12);
+      this.pulseGain.gain.setTargetAtTime(0.08, now, 0.08);
+      this.sub.frequency.setTargetAtTime(42, now, 0.1);
+      this.filter.frequency.setTargetAtTime(165, now, 0.12);
+    } else {
+      this.masterGain.gain.cancelScheduledValues(now);
+      this.masterGain.gain.setValueAtTime(Math.max(0.001, this.masterGain.gain.value), now);
+      this.masterGain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+      this.pulseGain.gain.setTargetAtTime(0, now, 0.1);
+      this.sub.frequency.setTargetAtTime(34, now, 0.15);
+      this.filter.frequency.setTargetAtTime(120, now, 0.15);
+    }
   }
 }

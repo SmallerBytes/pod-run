@@ -194,7 +194,7 @@ export class GrabSystem {
     const easeBack = (lever: THREE.Group, held: boolean) => {
       if (held) return;
       const { homeZ, travel } = lever.userData as { homeZ: number; travel: number };
-      const idleZ = homeZ + travel * LEVER_IDLE_FRACTION; // ~0.14 thrust
+      const idleZ = homeZ + travel * LEVER_IDLE_FRACTION; // zero thrust
 
       lever.position.z = THREE.MathUtils.lerp(lever.position.z, idleZ, 1 - Math.exp(-dt * 3));
     };

@@ -24,7 +24,7 @@ export interface CollisionEvent {
   impact: number; // 0..1 severity
 }
 
-const IDLE_FLOOR = 0.12;
+const IDLE_FLOOR = 0;
 const OVERDRIVE_MAX = 4; // seconds of charge
 const OVERDRIVE_RECHARGE = 0.45; // charge per second
 const OVERDRIVE_HEAT = 0.22; // extra heat per second
