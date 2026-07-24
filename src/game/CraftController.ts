@@ -27,7 +27,6 @@ export interface CollisionEvent {
 const IDLE_FLOOR = 0;
 const OVERDRIVE_MAX = 4; // seconds of charge
 const OVERDRIVE_RECHARGE = 0.45; // charge per second
-const OVERDRIVE_HEAT = 0.22; // extra heat per second
 
 /**
  * Player skiff simulation: differential thrust drives speed and yaw, heat caps
@@ -131,24 +130,22 @@ export class CraftController {
       this.overdriveCharge = Math.min(OVERDRIVE_MAX, this.overdriveCharge + OVERDRIVE_RECHARGE * dt);
     }
 
-    // heat model
+    // Heat only builds while the Y-afterburner is lit. Normal throttle and
+    // overdrive do not cook the engines — they just cool back down.
     const load = (inL * inL + inR * inR) / 2;
     this.burnerActive =
       raw.burner &&
       !frozen &&
       (!this.leftEngineExploded || !this.rightEngineExploded);
-    this.heat += (
-      load * this.stats.heatRate +
-      (this.overdriveActive ? OVERDRIVE_HEAT : 0) +
-      (this.burnerActive ? 0.14 : 0)
-    ) * dt;
-    this.heat -= this.stats.coolRate * (1.2 - load) * dt;
-    this.heat = Math.max(0, Math.min(1, this.heat));
     if (this.burnerActive) {
+      this.heat += 0.28 * dt;
       const burnerDamage = (2.2 + load * 2.0) * dt;
       if (!this.leftEngineExploded) this.applyEngineDamage(-1, burnerDamage);
       if (!this.rightEngineExploded) this.applyEngineDamage(1, burnerDamage);
+    } else {
+      this.heat -= this.stats.coolRate * 1.35 * dt;
     }
+    this.heat = Math.max(0, Math.min(1, this.heat));
 
     // overheating caps power; a wrecked hull limps
     let powerCap = this.heat > 0.85 ? 1 - (this.heat - 0.85) * 4.5 : 1;

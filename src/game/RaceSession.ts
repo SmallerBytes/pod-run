@@ -18,7 +18,7 @@ interface InputProvider {
   getInput(): ThrustInput & { leftHeld: boolean; rightHeld: boolean };
   xHoldSeconds?: number;
   xHoldCompleted?: boolean;
-  consumeIgnitionRays?: () => { origin: THREE.Vector3; direction: THREE.Vector3 }[];
+  ignitionTouchSides?: () => ('left' | 'right')[];
 }
 
 /**
@@ -45,8 +45,12 @@ export class RaceSession {
   private rightEngineWasExploded = false;
   private leftIgnited = false;
   private rightIgnited = false;
-  private readonly raycaster = new THREE.Raycaster();
-  private readonly ignitionHits: THREE.Object3D[] = [];
+  private readonly handScratch: THREE.Vector3[] = [];
+  private readonly leftTouch = new THREE.Vector3();
+  private readonly rightTouch = new THREE.Vector3();
+  private readonly engineWorld = new THREE.Vector3();
+  private readonly ENGINE_TOUCH_RADIUS = 1.35;
+  private readonly PANEL_TOUCH_RADIUS = 0.16;
 
   constructor(
     private scene: THREE.Scene,
@@ -107,14 +111,7 @@ export class RaceSession {
     this.skiff.rightExhaust.visible = false;
     this.skiff.leftExhaust.scale.setScalar(0);
     this.skiff.rightExhaust.scale.setScalar(0);
-    this.hud.showMessage('TAP ENGINES TO IGNITE', 8, '#ffd9a0');
-
-    this.ignitionHits.length = 0;
-    this.ignitionHits.push(
-      this.skiff.leftEngine,
-      this.skiff.rightEngine,
-      this.hud.enginePanelMesh
-    );
+    this.hud.showMessage('TOUCH ENGINES TO IGNITE', 8, '#ffd9a0');
 
     for (let i = 0; i < this.rivals.length; i++) {
       const old = this.rivals[i];
@@ -150,16 +147,16 @@ export class RaceSession {
     const rawInput = input.getInput();
 
     if (this.state === 'arming') {
-      this.resolveIgnitionTaps(input);
+      this.resolveIgnitionTouches(input);
       if (this.leftIgnited && this.rightIgnited) {
         this.startCountdown();
       } else {
         const waiting =
           !this.leftIgnited && !this.rightIgnited
-            ? 'TAP ENGINES TO IGNITE'
+            ? 'TOUCH ENGINES TO IGNITE'
             : !this.leftIgnited
-              ? 'TAP LEFT ENGINE'
-              : 'TAP RIGHT ENGINE';
+              ? 'TOUCH LEFT ENGINE'
+              : 'TOUCH RIGHT ENGINE';
         this.hud.showMessage(waiting, 0.4, '#ffd9a0');
       }
     }
@@ -356,47 +353,49 @@ export class RaceSession {
     }
   }
 
-  private resolveIgnitionTaps(input: InputProvider): void {
-    const rays = input.consumeIgnitionRays?.() ?? [];
-    if (rays.length === 0) return;
+  private resolveIgnitionTouches(input: InputProvider): void {
+    // Desktop: Q / P stand in for reaching out and touching each engine.
+    for (const side of input.ignitionTouchSides?.() ?? []) {
+      this.igniteSide(side);
+    }
 
-    for (const ray of rays) {
-      this.raycaster.set(ray.origin, ray.direction);
-      this.raycaster.far = 40;
-      const hits = this.raycaster.intersectObjects(this.ignitionHits, true);
-      for (const hit of hits) {
-        const side = this.ignitionSideFromHit(hit);
-        if (!side) continue;
-        if (side === 'left' && !this.leftIgnited) {
-          this.leftIgnited = true;
-          this.skiff.leftExhaust.visible = true;
-          this.skiff.leftExhaust.scale.setScalar(0.55);
-          this.audio.engineIgnite();
-          this.grab?.crashRumble();
-        } else if (side === 'right' && !this.rightIgnited) {
-          this.rightIgnited = true;
-          this.skiff.rightExhaust.visible = true;
-          this.skiff.rightExhaust.scale.setScalar(0.55);
-          this.audio.engineIgnite();
-          this.grab?.crashRumble();
-        }
-        break;
+    // VR: just poke the engine (or its diagram on the dash). No trigger click.
+    this.hud.enginePanelMesh.updateWorldMatrix(true, false);
+    this.hud.getEngineTouchPoints(this.leftTouch, this.rightTouch);
+    const hands = this.grab?.getHandWorldPositions(this.handScratch) ?? [];
+    for (const hand of hands) {
+      if (!this.leftIgnited && hand.distanceTo(this.leftTouch) < this.PANEL_TOUCH_RADIUS) {
+        this.igniteSide('left');
+      }
+      if (!this.rightIgnited && hand.distanceTo(this.rightTouch) < this.PANEL_TOUCH_RADIUS) {
+        this.igniteSide('right');
+      }
+
+      this.skiff.leftEngine.getWorldPosition(this.engineWorld);
+      if (!this.leftIgnited && hand.distanceTo(this.engineWorld) < this.ENGINE_TOUCH_RADIUS) {
+        this.igniteSide('left');
+      }
+      this.skiff.rightEngine.getWorldPosition(this.engineWorld);
+      if (!this.rightIgnited && hand.distanceTo(this.engineWorld) < this.ENGINE_TOUCH_RADIUS) {
+        this.igniteSide('right');
       }
     }
   }
 
-  private ignitionSideFromHit(hit: THREE.Intersection): 'left' | 'right' | null {
-    let obj: THREE.Object3D | null = hit.object;
-    while (obj) {
-      if (obj.userData.ignitionSide === 'left' || obj.userData.ignitionSide === 'right') {
-        return obj.userData.ignitionSide;
-      }
-      if (obj.userData.ignitionPanel && hit.uv) {
-        return this.hud.ignitionSideFromUv(hit.uv);
-      }
-      obj = obj.parent;
+  private igniteSide(side: 'left' | 'right'): void {
+    if (side === 'left') {
+      if (this.leftIgnited) return;
+      this.leftIgnited = true;
+      this.skiff.leftExhaust.visible = true;
+      this.skiff.leftExhaust.scale.setScalar(0.55);
+    } else {
+      if (this.rightIgnited) return;
+      this.rightIgnited = true;
+      this.skiff.rightExhaust.visible = true;
+      this.skiff.rightExhaust.scale.setScalar(0.55);
     }
-    return null;
+    this.audio.engineIgnite();
+    this.grab?.crashRumble();
   }
 
   private finishRace(): void {

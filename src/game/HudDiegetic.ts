@@ -297,7 +297,7 @@ export class HudDiegetic {
     ctx.textAlign = 'center';
     ctx.fillStyle = '#8f795a';
     ctx.font = 'bold 16px monospace';
-    ctx.fillText(arming ? 'TAP ENGINES TO IGNITE' : 'TWIN ENGINE STATUS', w / 2, 19);
+    ctx.fillText(arming ? 'TOUCH ENGINES TO IGNITE' : 'TWIN ENGINE STATUS', w / 2, 19);
 
     const healthColor = (health: number, exploded: boolean, ignited: boolean | undefined) => {
       if (arming && ignited === false) return '#6a6258';
@@ -368,7 +368,7 @@ export class HudDiegetic {
       ctx.fillStyle = color;
       ctx.font = 'bold 18px monospace';
       const status = cold
-        ? 'OFF — TAP'
+        ? 'OFF — TOUCH'
         : ignited === true && arming
           ? 'ONLINE'
           : exploded
@@ -403,6 +403,12 @@ export class HudDiegetic {
   /** Map a UV hit on the engine panel to left/right ignition. */
   ignitionSideFromUv(uv: THREE.Vector2): 'left' | 'right' {
     return uv.x < 0.5 ? 'left' : 'right';
+  }
+
+  /** World-space poke targets for the left/right engine diagrams on the HUD. */
+  getEngineTouchPoints(leftOut: THREE.Vector3, rightOut: THREE.Vector3): void {
+    leftOut.set(-0.07, 0, 0.04).applyMatrix4(this.enginePanelMesh.matrixWorld);
+    rightOut.set(0.07, 0, 0.04).applyMatrix4(this.enginePanelMesh.matrixWorld);
   }
 
   private drawMessage(): void {

@@ -7,7 +7,7 @@ import { ThrustInput } from './CraftController';
  * hold both for straight-line power (release to ease off), Shift = overdrive,
  * Y toggles engine burner, hold X for 5s = repair engines,
  * mouse (pointer lock) = look around the pod, R = restart after finish.
- * During pre-race arming, click aims from the camera to ignite engines.
+ * During pre-race arming, Q / P "touch" the matching engine to ignite.
  */
 export class DesktopControls {
   private keys = new Set<string>();
@@ -16,7 +16,6 @@ export class DesktopControls {
   private leftRamp = 0;
   private rightRamp = 0;
   private burnerEnabled = false;
-  private clickPending = false;
 
   restartRequested = false;
   /** Seconds X has been held; RaceSession uses this for engine repair. */
@@ -40,10 +39,6 @@ export class DesktopControls {
       this.lookPitch -= e.movementY * 0.0022;
       this.lookPitch = THREE.MathUtils.clamp(this.lookPitch, -1.2, 1.2);
       this.lookYaw = THREE.MathUtils.clamp(this.lookYaw, -2.4, 2.4);
-    });
-
-    domElement.addEventListener('mousedown', (e) => {
-      if (e.button === 0) this.clickPending = true;
     });
   }
 
@@ -80,14 +75,11 @@ export class DesktopControls {
     return r;
   }
 
-  /** Camera-forward tap rays from left-clicks (pre-race ignition). */
-  consumeIgnitionRays(): { origin: THREE.Vector3; direction: THREE.Vector3 }[] {
-    if (!this.clickPending) return [];
-    this.clickPending = false;
-    const origin = new THREE.Vector3();
-    const direction = new THREE.Vector3();
-    this.camera.getWorldPosition(origin);
-    this.camera.getWorldDirection(direction);
-    return [{ origin, direction: direction.normalize() }];
+  /** Desktop stand-in for touching engines: Q = left, P = right. */
+  ignitionTouchSides(): ('left' | 'right')[] {
+    const sides: ('left' | 'right')[] = [];
+    if (this.keys.has('q')) sides.push('left');
+    if (this.keys.has('p')) sides.push('right');
+    return sides;
   }
 }
