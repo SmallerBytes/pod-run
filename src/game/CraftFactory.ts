@@ -1419,24 +1419,24 @@ function buildThrottle(
     lever.add(seg);
   }
 
-  // lower arm — straight riser
-  const lower = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.034, 0.55, 8), mats.dark);
-  lower.position.set(0, 0.3, 0);
+  // lower arm — shortened riser so the grip sits nearer chest/lap height
+  const lower = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.034, 0.4, 8), mats.dark);
+  lower.position.set(0, 0.23, 0);
   lever.add(lower);
 
   const elbow = new THREE.Mesh(new THREE.SphereGeometry(0.038, 8, 6), mats.guard);
-  elbow.position.set(0, 0.58, 0);
+  elbow.position.set(0, 0.44, 0);
   lever.add(elbow);
 
   // upper arm — leans up, outward, and slightly back toward the pilot
-  const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.026, 0.48, 8), mats.dark);
-  upper.position.set(side * 0.03, 0.8, 0.05);
+  const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.026, 0.34, 8), mats.dark);
+  upper.position.set(side * 0.03, 0.6, 0.04);
   upper.rotation.set(0.2, 0, side * -0.15);
   lever.add(upper);
 
-  // handlebar grip raised a bit higher, eased back from the lap
+  // handlebar grip — lowered a notch from the previous chest-high reach
   const gripGroup = new THREE.Group();
-  gripGroup.position.set(side * 0.06, 1.02, 0.1);
+  gripGroup.position.set(side * 0.06, 0.76, 0.08);
   gripGroup.rotation.z = -side * (Math.PI / 2 - 0.35);
   lever.add(gripGroup);
 
