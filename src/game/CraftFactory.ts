@@ -212,29 +212,33 @@ function buildHull(parent: THREE.Group, kitId: string, mats: Mats): void {
   }
 
   // Shared cockpit floor + low side rails (hip-height, never blocking the dash).
-  // Sit clearly above the hull belly so nothing coplanar z-fights on the floor.
+  // Kept strictly above the belly slab so coplanar faces cannot z-fight.
   const floorPlate = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.04, 1.05), mats.dark);
-  floorPlate.position.set(0, 0.34, 0.05);
+  floorPlate.position.set(0, 0.32, 0.05);
   hull.add(floorPlate);
   for (const x of [-0.32, 0.32]) {
     const rail = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.22, 0.95), mats.dark);
-    rail.position.set(x, 0.48, 0.08);
+    rail.position.set(x, 0.4, 0.08);
     hull.add(rail);
   }
 
-  // Angled side button panels flanking the seat (reference-style consoles)
-  const buttonColors = [0xff4a3a, 0xffd23e, 0x4a90ff, 0x6fce6f, 0xff8c2a, 0x69e6e0];
+  // Angled side button panels flanking the seat (no blue — keeps the floor grey).
+  const buttonColors = [0xff4a3a, 0xffd23e, 0xb8b0a4, 0x6fce6f, 0xff8c2a, 0x8a8378];
   for (const side of [-1, 1] as const) {
     const panel = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.02, 0.55), mats.dark);
-    panel.position.set(side * 0.34, 0.42, -0.1);
+    panel.position.set(side * 0.34, 0.48, -0.1);
     panel.rotation.z = side * -0.35;
     hull.add(panel);
     for (let i = 0; i < 6; i++) {
       const b = new THREE.Mesh(
         new THREE.BoxGeometry(0.03, 0.012, 0.05),
-        new THREE.MeshBasicMaterial({ color: buttonColors[i] })
+        new THREE.MeshStandardMaterial({
+          color: buttonColors[i],
+          roughness: 0.55,
+          metalness: 0.25
+        })
       );
-      b.position.set(side * 0.34, 0.435, -0.32 + i * 0.09);
+      b.position.set(side * 0.34, 0.495, -0.32 + i * 0.09);
       b.rotation.z = side * -0.35;
       hull.add(b);
     }
@@ -261,20 +265,18 @@ function buildOpenGondola(
   const halfW = opts.width * 0.5;
   const halfL = opts.length * 0.5;
 
-  // Flat belly slab — single solid floor/underside. Avoid stacking a second
-  // half-pipe on the same plane (that caused cockpit-floor z-fighting).
+  // Flat belly slab — the tub floor from the outside
   const belly = new THREE.Mesh(new THREE.BoxGeometry(opts.width * 0.92, 0.22, opts.length), mats.primary);
   belly.position.set(0, opts.bellyY, 0.1);
   hull.add(belly);
 
-  // Rounded undercarriage sits fully below the belly so it never intersects
-  // the cockpit interior.
+  // Rounded undercarriage (half-pipe opening upward)
   const under = new THREE.Mesh(
-    new THREE.CylinderGeometry(halfW * 0.88, halfW * 0.78, opts.length * 0.9, 14, 1, false, 0, Math.PI),
+    new THREE.CylinderGeometry(halfW * 0.9, halfW * 0.8, opts.length * 0.95, 14, 1, false, Math.PI * 1.5, Math.PI),
     mats.primary
   );
   under.rotation.x = Math.PI / 2;
-  under.position.set(0, opts.bellyY - 0.16, 0.1);
+  under.position.set(0, opts.bellyY - 0.02, 0.1);
   hull.add(under);
 
   // Side flanks — hip-height rails, open above so you look out over them
@@ -308,16 +310,15 @@ function buildOpenGondola(
   cowlCap.rotation.x = 0.22;
   hull.add(cowlCap);
 
-  // Accent stripes ride the exterior flanks only — never cut through the
-  // cockpit floor (secondary paint is often bright blue and z-fought badly).
+  // Exterior flank trim only — never cut a painted band through the cockpit
+  // floor (that caused blue z-fighting flashes with the default secondary paint).
   if (opts.stripeBand) {
     for (const side of [-1, 1] as const) {
-      const band = new THREE.Mesh(
-        new THREE.BoxGeometry(0.05, 0.1, opts.length * 0.55),
-        mats.secondary
-      );
-      band.position.set(side * (halfW * 0.96), opts.bellyY + 0.12, 0.15);
-      hull.add(band);
+      for (const z of [-0.25, 0.45]) {
+        const band = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.14, 0.22), mats.dark);
+        band.position.set(side * (halfW * 0.96), opts.bellyY + 0.16, z);
+        hull.add(band);
+      }
     }
   }
 
@@ -346,6 +347,8 @@ function buildOpenGondola(
 function buildSeat(parent: THREE.Group, kitId: string, mats: Mats): void {
   const seat = new THREE.Group();
   parent.add(seat);
+  // Raised slightly so the cushion sits on the dark floor plate.
+  seat.position.y = 0.06;
 
   if (kitId === 'bench') {
     const plate = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.1, 0.55), mats.secondary);
@@ -1395,11 +1398,11 @@ function buildThrottle(
 
   // Slide rail on the floor (shows the push/pull travel)
   const rail = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.025, LEVER_TRAVEL * 2 + 0.12), mats.dark);
-  rail.position.set(x, 0.365, homeZ);
+  rail.position.set(x, 0.34, homeZ);
   parent.add(rail);
 
   // Sliding lever assembly
-  lever.position.set(x, 0.39, homeZ);
+  lever.position.set(x, 0.365, homeZ);
   lever.userData = { homeZ, travel: LEVER_TRAVEL };
   parent.add(lever);
 
