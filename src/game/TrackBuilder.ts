@@ -165,33 +165,188 @@ function buildTrackBarricades(track: Track): THREE.InstancedMesh {
   return barriers;
 }
 
-/** Big low-poly rocks placed on the racing surface as real slalom hazards. */
+/**
+ * Desert sandstone hazards: each rock is a uniquely warped, flat-bottomed
+ * mass with a gritty rock texture — not a repeated gemstone dodecahedron.
+ */
 function buildBoulderObstacles(track: Track): THREE.Group {
   const group = new THREE.Group();
-  const geometry = new THREE.DodecahedronGeometry(1, 1);
-  const materials = [
-    new THREE.MeshStandardMaterial({ color: 0x694633, roughness: 0.96 }),
-    new THREE.MeshStandardMaterial({ color: 0x7a5138, roughness: 0.94 }),
-    new THREE.MeshStandardMaterial({ color: 0x5d4031, roughness: 0.98 })
+  const rockMap = makeRockTexture();
+  const palettes = [
+    { color: 0x8a6848, roughness: 0.97, metalness: 0.04 },
+    { color: 0x6e5238, roughness: 0.98, metalness: 0.03 },
+    { color: 0x9a7652, roughness: 0.95, metalness: 0.05 },
+    { color: 0x5c4632, roughness: 0.99, metalness: 0.02 },
+    { color: 0x7d5f41, roughness: 0.96, metalness: 0.04 }
   ];
 
   TRACK_OBSTACLES.forEach((obstacle, index) => {
     const p = track.posAt(obstacle.t);
     const side = track.sideAt(obstacle.t);
+    const tangent = track.tangentAt(obstacle.t);
     const laneDistance = obstacle.laneOffset * track.halfWidthAt(obstacle.t) * 0.72;
-    const boulder = new THREE.Mesh(geometry, materials[index % materials.length]);
-    boulder.position.copy(p).addScaledVector(side, laneDistance);
-    boulder.position.y += obstacle.height * 0.5;
-    boulder.rotation.set(index * 0.73, index * 1.17, index * 0.41);
-    boulder.scale.set(
-      obstacle.radius * (0.9 + (index % 3) * 0.08),
-      obstacle.height * 0.5,
-      obstacle.radius * (0.84 + (index % 2) * 0.13)
+    const anchor = p.clone().addScaledVector(side, laneDistance);
+
+    const cluster = new THREE.Group();
+    cluster.position.copy(anchor);
+    // Sink slightly into the track so the base reads as buried sandstone.
+    cluster.position.y = p.y - 0.35;
+    cluster.rotation.y = Math.atan2(tangent.x, tangent.z) + (index % 2 === 0 ? 0.35 : -0.55);
+    group.add(cluster);
+
+    const mainMat = new THREE.MeshStandardMaterial({
+      ...palettes[index % palettes.length],
+      map: rockMap,
+      flatShading: true
+    });
+
+    const main = new THREE.Mesh(
+      makeNaturalRockGeometry(index * 97 + 11, {
+        radius: 1,
+        stretchY: 0.72 + (index % 3) * 0.08,
+        stretchX: 1.05 + (index % 2) * 0.18,
+        stretchZ: 0.88 + (index % 4) * 0.1,
+        noise: 0.28 + (index % 3) * 0.05
+      }),
+      mainMat
     );
-    group.add(boulder);
+    main.scale.set(obstacle.radius, obstacle.height * 0.42, obstacle.radius * 0.92);
+    main.rotation.set(0.08 * (index % 3), index * 0.7, -0.06 * ((index + 1) % 4));
+    cluster.add(main);
+
+    // One mid-size companion chunk so the hazard looks like a broken outcrop,
+    // not a solitary geometric prop. Kept large enough to read at race speed.
+    if (index % 2 === 0) {
+      const companion = new THREE.Mesh(
+        makeNaturalRockGeometry(index * 53 + 29, {
+          radius: 1,
+          stretchY: 0.55,
+          stretchX: 1.2,
+          stretchZ: 0.75,
+          noise: 0.34
+        }),
+        new THREE.MeshStandardMaterial({
+          ...palettes[(index + 2) % palettes.length],
+          map: rockMap,
+          flatShading: true
+        })
+      );
+      companion.scale.set(
+        obstacle.radius * 0.48,
+        obstacle.height * 0.22,
+        obstacle.radius * 0.4
+      );
+      companion.position.set(
+        (index % 3 === 0 ? 1 : -1) * obstacle.radius * 0.75,
+        obstacle.height * 0.02,
+        obstacle.radius * 0.2
+      );
+      companion.rotation.set(0.4, index * 1.1, 0.25);
+      cluster.add(companion);
+    }
   });
 
   return group;
+}
+
+/** Seeded irregular rock mesh with a flattened underside for sand seating. */
+function makeNaturalRockGeometry(
+  seed: number,
+  opts: {
+    radius: number;
+    stretchX: number;
+    stretchY: number;
+    stretchZ: number;
+    noise: number;
+  }
+): THREE.BufferGeometry {
+  const rng = mulberry32(seed);
+  const geometry = new THREE.IcosahedronGeometry(opts.radius, 2);
+  const pos = geometry.attributes.position as THREE.BufferAttribute;
+  const v = new THREE.Vector3();
+
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+
+    // Multi-lobed radial noise — facets without looking like a soccer ball.
+    const n1 = Math.sin(v.x * 3.1 + seed) * Math.cos(v.y * 2.4 + seed * 0.7);
+    const n2 = Math.sin(v.z * 4.2 + v.x * 1.7 + seed * 0.3);
+    const n3 = (rng() - 0.5) * 2;
+    const displace = 1 + opts.noise * (0.55 * n1 + 0.3 * n2 + 0.25 * n3);
+    v.multiplyScalar(displace);
+
+    v.x *= opts.stretchX;
+    v.y *= opts.stretchY;
+    v.z *= opts.stretchZ;
+
+    // Squash the bottom so it reads as a mass sitting in sand.
+    if (v.y < 0) {
+      v.y *= 0.35;
+      v.x *= 1.08;
+      v.z *= 1.08;
+    } else {
+      // Soften the crown into a weathered ridge instead of a point.
+      v.y *= 0.9 + 0.12 * Math.abs(Math.sin(v.x * 2.2 + v.z * 1.6));
+    }
+
+    pos.setXYZ(i, v.x, v.y, v.z);
+  }
+
+  geometry.computeVertexNormals();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+/** Gritty sandstone albedo: mottled grains, darker mineral flecks, soft cracks. */
+function makeRockTexture(): THREE.CanvasTexture {
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const rng = mulberry32(81427);
+
+  const base = ctx.createLinearGradient(0, 0, size, size);
+  base.addColorStop(0, '#8d6a48');
+  base.addColorStop(0.45, '#6f5238');
+  base.addColorStop(1, '#9a7654');
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, size, size);
+
+  for (let i = 0; i < 1400; i++) {
+    const shade = Math.floor(70 + rng() * 110);
+    ctx.fillStyle = `rgba(${shade},${Math.floor(shade * 0.74)},${Math.floor(shade * 0.48)},${0.08 + rng() * 0.18})`;
+    ctx.fillRect(rng() * size, rng() * size, 1 + rng() * 2.2, 1 + rng() * 2.2);
+  }
+
+  for (let i = 0; i < 28; i++) {
+    ctx.strokeStyle = `rgba(40,26,16,${0.12 + rng() * 0.2})`;
+    ctx.lineWidth = 0.8 + rng() * 1.6;
+    ctx.beginPath();
+    let x = rng() * size;
+    let y = rng() * size;
+    ctx.moveTo(x, y);
+    for (let s = 0; s < 5; s++) {
+      x += (rng() - 0.5) * 28;
+      y += (rng() - 0.5) * 28;
+      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  // Lighter mineral patches.
+  for (let i = 0; i < 18; i++) {
+    ctx.fillStyle = `rgba(210,180,130,${0.08 + rng() * 0.12})`;
+    ctx.beginPath();
+    ctx.ellipse(rng() * size, rng() * size, 8 + rng() * 18, 5 + rng() * 12, rng() * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
 }
 
 function isPitT(t: number): boolean {
