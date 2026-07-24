@@ -96,8 +96,8 @@ export function buildSkiffFromBuild(
   const engR = buildEngine(build.bricks.engineR, 1, mats);
   visual.add(engL.group, engR.group);
 
-  const cableL = buildCable(visual, build.bricks.cableL, -1, engL.group, engL.length, mats);
-  const cableR = buildCable(visual, build.bricks.cableR, 1, engR.group, engR.length, mats);
+  const cableL = buildCable(visual, build.bricks.cableL, -1, engL.group, engL.length, engL.radius, mats);
+  const cableR = buildCable(visual, build.bricks.cableR, 1, engR.group, engR.length, engR.radius, mats);
   const updateTether = buildEnergyTether(
     visual,
     engL.group,
@@ -467,6 +467,7 @@ function buildEngine(
   group: THREE.Group;
   exhaust: THREE.Mesh;
   length: number;
+  radius: number;
   emitterAnchor: THREE.Object3D;
   turbineRotor: THREE.Group;
   updateDamage: (health: number, exploded: boolean, dt: number, time: number) => void;
@@ -656,6 +657,7 @@ function buildEngine(
     group: g,
     exhaust,
     length: dims.len,
+    radius: dims.r,
     emitterAnchor,
     turbineRotor,
     updateDamage
@@ -1006,6 +1008,7 @@ function buildCable(
   side: -1 | 1,
   engine: THREE.Group,
   engineLen: number,
+  engineRadius: number,
   mats: Mats
 ): (detached: boolean, time: number) => void {
   const socketBase = new THREE.Vector3(side * 0.45, 0.55, -0.7);
@@ -1082,25 +1085,92 @@ function buildCable(
   cable.frustumCulled = false;
   parent.add(cable);
 
-  // Matching plug on the engine-side termination.
+  // Surface-mounted engine coupler on the inboard skin. Faces the cockpit so
+  // the flexible cable clearly plugs into hardware instead of vanishing into
+  // the turbine cylinder.
+  const couplerDir = new THREE.Vector3(-side * 0.35, -0.08, 1).normalize();
+  const skinAnchor = new THREE.Vector3(
+    -side * engineRadius * 0.92,
+    engineRadius * 0.12,
+    engineLen * 0.28
+  );
+
   const enginePlug = new THREE.Group();
-  enginePlug.position.set(-side * 0.2, 0, engineLen * 0.42);
-  const plugBody = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.085, 0.11, 0.28, 10),
-    mats.dark
-  );
-  plugBody.rotation.x = Math.PI / 2;
-  plugBody.position.z = 0.1;
-  enginePlug.add(plugBody);
-  const plugCollar = new THREE.Mesh(
-    new THREE.TorusGeometry(0.1, 0.025, 6, 14),
-    mats.guard
-  );
-  plugCollar.position.z = 0.24;
-  enginePlug.add(plugCollar);
+  enginePlug.position.copy(skinAnchor);
   engine.add(enginePlug);
 
-  const attachLocal = enginePlug.position.clone().add(new THREE.Vector3(0, 0, 0.25));
+  const plate = new THREE.Mesh(
+    new THREE.BoxGeometry(0.34, 0.3, 0.08),
+    mats.secondary
+  );
+  plate.position.addScaledVector(couplerDir, -0.02);
+  plate.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), couplerDir);
+  enginePlug.add(plate);
+
+  for (const [ox, oy] of [
+    [-0.11, -0.09],
+    [0.11, -0.09],
+    [-0.11, 0.09],
+    [0.11, 0.09]
+  ] as const) {
+    const bolt = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.02, 0.02, 0.04, 8),
+      mats.guard
+    );
+    bolt.position
+      .copy(plate.position)
+      .add(new THREE.Vector3(ox, oy, 0).applyQuaternion(plate.quaternion))
+      .addScaledVector(couplerDir, 0.05);
+    bolt.quaternion.copy(plate.quaternion);
+    enginePlug.add(bolt);
+  }
+
+  const flange = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.14, 0.16, 0.08, 12),
+    mats.dark
+  );
+  flange.position.copy(plate.position).addScaledVector(couplerDir, 0.06);
+  flange.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), couplerDir);
+  enginePlug.add(flange);
+
+  const housing = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.1, 0.13, 0.34, 12),
+    mats.dark
+  );
+  housing.position.copy(plate.position).addScaledVector(couplerDir, 0.24);
+  housing.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), couplerDir);
+  enginePlug.add(housing);
+
+  const lockRing = new THREE.Mesh(
+    new THREE.TorusGeometry(0.115, 0.028, 6, 16),
+    mats.guard
+  );
+  lockRing.position.copy(plate.position).addScaledVector(couplerDir, 0.38);
+  lockRing.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), couplerDir);
+  enginePlug.add(lockRing);
+
+  // Soft boot / strain relief so the flexible cable reads as clamped in.
+  for (let i = 0; i < 4; i++) {
+    const boot = new THREE.Mesh(
+      new THREE.TorusGeometry(0.085 - i * 0.008, 0.018, 6, 12),
+      mats.cable
+    );
+    boot.position
+      .copy(plate.position)
+      .addScaledVector(couplerDir, 0.44 + i * 0.045);
+    boot.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), couplerDir);
+    enginePlug.add(boot);
+  }
+
+  const tipCap = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.055, 0.075, 0.1, 10),
+    mats.dark
+  );
+  tipCap.position.copy(plate.position).addScaledVector(couplerDir, 0.62);
+  tipCap.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), couplerDir);
+  enginePlug.add(tipCap);
+
+  const attachLocal = skinAnchor.clone().addScaledVector(couplerDir, 0.68);
   const to = new THREE.Vector3();
   const a = new THREE.Vector3();
   const b = new THREE.Vector3();
