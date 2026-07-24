@@ -27,6 +27,11 @@ export interface CollisionEvent {
 const IDLE_FLOOR = 0;
 const OVERDRIVE_MAX = 4; // seconds of charge
 const OVERDRIVE_RECHARGE = 0.45; // charge per second
+/** Max speed (m/s) while holding the repair button. */
+const REPAIR_SPEED_CAP = 40;
+/** Engine/hull points restored per second while repairing (visible climb). */
+const REPAIR_ENGINE_RATE = 6;
+const REPAIR_HULL_RATE_FRACTION = 0.06; // 6% of max hull per second
 
 /**
  * Player skiff simulation: differential thrust drives speed and yaw, heat caps
@@ -48,6 +53,8 @@ export class CraftController {
   overdriveCharge = OVERDRIVE_MAX;
   overdriveActive = false;
   burnerActive = false;
+  /** True while the pilot is holding field-repair (X). Caps top speed. */
+  repairing = false;
 
   /** Smoothed effective thrust per side, for gauges/exhaust/audio. */
   effLeft = 0;
@@ -99,6 +106,7 @@ export class CraftController {
     this.stability = 1;
     this.overdriveCharge = OVERDRIVE_MAX;
     this.burnerActive = false;
+    this.repairing = false;
     this.trackT = startT;
     this.limpMode = false;
     this.airborne = false;
@@ -169,7 +177,8 @@ export class CraftController {
     // longitudinal
     const avg = (effL + effR) / 2;
     const sandDrag = this.inSoftSand ? 0.55 : 1;
-    const targetSpeed = this.stats.topSpeed * avg * odBoost * sandDrag;
+    let targetSpeed = this.stats.topSpeed * avg * odBoost * sandDrag;
+    if (this.repairing) targetSpeed = Math.min(targetSpeed, REPAIR_SPEED_CAP);
     const accel =
       this.stats.accel *
       (this.overdriveActive ? 1.5 : 1) *
@@ -179,6 +188,7 @@ export class CraftController {
     } else {
       this.speed = Math.max(targetSpeed, this.speed - (accel * 0.9 + (this.inSoftSand ? 14 : 0)) * dt);
     }
+    if (this.repairing) this.speed = Math.min(this.speed, REPAIR_SPEED_CAP);
 
     // Pure differential-thrust steering:
     // more LEFT-engine throttle turns RIGHT; more RIGHT turns LEFT.
@@ -375,25 +385,19 @@ export class CraftController {
   }
 
   /**
-   * Continuous field repair while X is held. From empty, a full hold of
-   * ~5 seconds restores hull + both engines; releasing pauses progress.
+   * Continuous field repair while X is held. Health climbs slowly so the
+   * engine display visibly fills; releasing pauses progress.
    * Returns true the frame everything reaches full health.
    */
   repairTick(dt: number): boolean {
-    const before =
-      this.hullFraction >= 1 &&
-      this.leftEngineHealthFraction >= 1 &&
-      this.rightEngineHealthFraction >= 1 &&
-      !this.leftEngineExploded &&
-      !this.rightEngineExploded &&
-      !this.limpMode;
+    const before = this.isFullyRepaired;
 
-    // ~5 seconds from wrecked to pristine.
-    const hullRate = this.stats.hullMax / 5;
-    const engineRate = 100 / 5;
-    this.hull = Math.min(this.stats.hullMax, this.hull + hullRate * dt);
-    this.engineHealthLeft = Math.min(100, this.engineHealthLeft + engineRate * dt);
-    this.engineHealthRight = Math.min(100, this.engineHealthRight + engineRate * dt);
+    this.hull = Math.min(
+      this.stats.hullMax,
+      this.hull + this.stats.hullMax * REPAIR_HULL_RATE_FRACTION * dt
+    );
+    this.engineHealthLeft = Math.min(100, this.engineHealthLeft + REPAIR_ENGINE_RATE * dt);
+    this.engineHealthRight = Math.min(100, this.engineHealthRight + REPAIR_ENGINE_RATE * dt);
 
     // An exploded engine comes back online as soon as it has any integrity.
     if (this.engineHealthLeft > 0.5) this.leftEngineExploded = false;
@@ -401,14 +405,7 @@ export class CraftController {
     if (this.hull > 0) this.limpMode = false;
     this.heat = Math.max(0, this.heat - 0.12 * dt);
 
-    const after =
-      this.hullFraction >= 1 &&
-      this.leftEngineHealthFraction >= 1 &&
-      this.rightEngineHealthFraction >= 1 &&
-      !this.leftEngineExploded &&
-      !this.rightEngineExploded &&
-      !this.limpMode;
-    return !before && after;
+    return !before && this.isFullyRepaired;
   }
 
   /** True when hull and both engines are fully healthy. */

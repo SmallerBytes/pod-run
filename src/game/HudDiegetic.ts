@@ -138,6 +138,8 @@ export class HudDiegetic {
       leftEngineExploded: boolean;
       rightEngineExploded: boolean;
       burnerActive: boolean;
+      /** While true, refresh the engine panel every frame so health visibly climbs. */
+      repairing?: boolean;
       /** Pre-race ignition; undefined means engines are already live. */
       leftIgnited?: boolean;
       rightIgnited?: boolean;
@@ -162,13 +164,21 @@ export class HudDiegetic {
       this.group.position.copy(this.basePosition);
     }
 
-    // throttled canvas redraws
+    // throttled canvas redraws — engines refresh every frame while repairing
+    // so the health bars visibly climb.
     this.redrawTimer += dt;
+    const refreshEngines = !!data.repairing || this.redrawTimer >= 0.1;
     if (this.redrawTimer >= 0.1) {
       this.redrawTimer = 0;
       this.drawSpeed(data.speed, data.overheated);
       this.drawRace(data.place, data.racerCount, data.lap, data.lapsTotal, data.raceTime);
       this.drawNav(data.playerT, data.playerYaw, data.aiTs, data.nextCheckpointT);
+      if (this.messageText && performance.now() / 1000 > this.messageUntil) {
+        this.messageText = '';
+        this.drawMessage();
+      }
+    }
+    if (refreshEngines) {
       this.drawEngines(
         data.engineHealthL,
         data.engineHealthR,
@@ -178,10 +188,6 @@ export class HudDiegetic {
         data.leftIgnited,
         data.rightIgnited
       );
-      if (this.messageText && performance.now() / 1000 > this.messageUntil) {
-        this.messageText = '';
-        this.drawMessage();
-      }
     }
   }
 

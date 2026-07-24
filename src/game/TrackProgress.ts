@@ -37,18 +37,18 @@ export interface TrackObstacle {
 
 /** Large, isolated boulders with enough open lane remaining to dodge them. */
 export const TRACK_OBSTACLES: readonly TrackObstacle[] = [
-  { t: 0.055, laneOffset: -0.38, radius: 2.8, height: 5.2 },
-  { t: 0.12, laneOffset: 0.42, radius: 3.2, height: 6.1 },
-  { t: 0.19, laneOffset: -0.25, radius: 2.5, height: 4.8 },
-  { t: 0.28, laneOffset: 0.32, radius: 3.5, height: 6.5 },
-  { t: 0.36, laneOffset: -0.44, radius: 3, height: 5.8 },
-  { t: 0.45, laneOffset: 0.18, radius: 2.7, height: 5.1 },
-  { t: 0.54, laneOffset: -0.3, radius: 3.4, height: 6.2 },
-  { t: 0.63, laneOffset: 0.4, radius: 2.6, height: 5 },
-  { t: 0.72, laneOffset: -0.2, radius: 3.1, height: 5.7 },
-  { t: 0.81, laneOffset: 0.36, radius: 3.6, height: 6.8 },
-  { t: 0.89, laneOffset: -0.4, radius: 2.9, height: 5.4 },
-  { t: 0.95, laneOffset: 0.25, radius: 3.2, height: 6 }
+  { t: 0.06, laneOffset: -0.36, radius: 2.8, height: 5.2 },
+  { t: 0.14, laneOffset: 0.4, radius: 3.1, height: 5.8 },
+  { t: 0.22, laneOffset: -0.28, radius: 2.6, height: 4.9 },
+  { t: 0.34, laneOffset: 0.34, radius: 3.4, height: 6.2 },
+  { t: 0.42, laneOffset: -0.42, radius: 2.9, height: 5.5 },
+  { t: 0.5, laneOffset: 0.22, radius: 3.2, height: 6 },
+  { t: 0.58, laneOffset: -0.32, radius: 2.7, height: 5.1 },
+  { t: 0.66, laneOffset: 0.38, radius: 3.5, height: 6.4 },
+  { t: 0.74, laneOffset: -0.24, radius: 2.8, height: 5.3 },
+  { t: 0.82, laneOffset: 0.36, radius: 3.3, height: 6.1 },
+  { t: 0.9, laneOffset: -0.4, radius: 2.9, height: 5.4 },
+  { t: 0.96, laneOffset: 0.26, radius: 3.1, height: 5.9 }
 ];
 
 export function tInRange(t: number, start: number, end: number): boolean {

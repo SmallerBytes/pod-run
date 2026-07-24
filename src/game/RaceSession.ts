@@ -183,7 +183,18 @@ export class RaceSession {
 
     if (racing) this.raceTime += dt;
 
-    // player physics
+    const xHold = input.xHoldSeconds ?? 0;
+    const needsRepair =
+      this.controller.limpMode ||
+      this.controller.hullFraction < 1 ||
+      this.controller.leftEngineHealthFraction < 1 ||
+      this.controller.rightEngineHealthFraction < 1 ||
+      this.controller.leftEngineExploded ||
+      this.controller.rightEngineExploded;
+    const isRepairing = racing && xHold > 0 && needsRepair;
+    this.controller.repairing = isRepairing;
+
+    // player physics (speed is capped at 40 while repairing)
     this.controller.update(dt, rawInput, frozen);
     this.syncSkiffTransform();
     this.tracker.update(this.controller.position);
@@ -217,33 +228,18 @@ export class RaceSession {
     }
     this.lastPlace = place;
 
-    // limp-mode / repair — hold X to gradually restore hull + engines
-    const xHold = input.xHoldSeconds ?? 0;
+    // Hold X to gradually restore hull + engines (health climbs on the HUD).
     const leftJustExploded =
       this.controller.leftEngineExploded && !this.leftEngineWasExploded;
     const rightJustExploded =
       this.controller.rightEngineExploded && !this.rightEngineWasExploded;
-    const needsRepair =
-      this.controller.limpMode ||
-      this.controller.hullFraction < 1 ||
-      this.controller.leftEngineHealthFraction < 1 ||
-      this.controller.rightEngineHealthFraction < 1 ||
-      this.controller.leftEngineExploded ||
-      this.controller.rightEngineExploded;
-    if (racing && xHold > 0 && needsRepair) {
+    if (isRepairing) {
       const justFinished = this.controller.repairTick(dt);
       if (justFinished) {
         this.hud.showMessage('ENGINES REPAIRED', 2, '#6fce6f');
         this.audio.lapDing();
       } else {
-        const progress = Math.round(
-          ((this.controller.hullFraction +
-            this.controller.leftEngineHealthFraction +
-            this.controller.rightEngineHealthFraction) /
-            3) *
-            100
-        );
-        this.hud.showMessage(`REPAIRING ${progress}%`, 0.35, '#9fd8ff');
+        this.hud.showMessage('REPAIRING', 0.35, '#9fd8ff');
       }
     } else if (racing && (leftJustExploded || rightJustExploded)) {
       const side = leftJustExploded && rightJustExploded
@@ -350,6 +346,7 @@ export class RaceSession {
       leftEngineExploded: this.controller.leftEngineExploded,
       rightEngineExploded: this.controller.rightEngineExploded,
       burnerActive: this.controller.burnerActive,
+      repairing: isRepairing,
       leftIgnited: this.state === 'arming' ? this.leftIgnited : undefined,
       rightIgnited: this.state === 'arming' ? this.rightIgnited : undefined
     });
