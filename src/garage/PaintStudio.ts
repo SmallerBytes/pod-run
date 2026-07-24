@@ -99,6 +99,7 @@ export class PaintStudio {
     bindColor('paint-primary', 'primary');
     bindColor('paint-secondary', 'secondary');
     bindColor('paint-stripe', 'stripe');
+    bindColor('paint-tether', 'tether');
   }
 
   private refreshStats(): void {

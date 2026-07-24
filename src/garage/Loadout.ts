@@ -97,6 +97,8 @@ export interface PaintJob {
   primary: string;
   secondary: string;
   stripe: string;
+  /** Color of the energy laser linking the twin engines. */
+  tether: string;
 }
 
 export interface CraftBuild {
@@ -117,7 +119,7 @@ export const DEFAULT_BUILD: CraftBuild = {
     cableL: 'slack',
     cableR: 'slack'
   },
-  paint: { primary: '#c8ccd2', secondary: '#2a4fae', stripe: '#ffd23e' }
+  paint: { primary: '#c8ccd2', secondary: '#2a4fae', stripe: '#ffd23e', tether: '#76cfff' }
 };
 
 const STORAGE_KEY = 'podrun.build.v1';

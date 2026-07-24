@@ -94,8 +94,8 @@ export function buildSkiffFromBuild(
   buildFin(visual, build.bricks.finR, 1, mats);
 
   // ---------- engines + cables + tether ----------
-  const engL = buildEngine(build.bricks.engineL, -1, mats);
-  const engR = buildEngine(build.bricks.engineR, 1, mats);
+  const engL = buildEngine(build.bricks.engineL, -1, mats, paint.tether);
+  const engR = buildEngine(build.bricks.engineR, 1, mats, paint.tether);
   engL.group.userData.ignitionSide = 'left';
   engR.group.userData.ignitionSide = 'right';
   visual.add(engL.group, engR.group);
@@ -107,7 +107,8 @@ export function buildSkiffFromBuild(
     engL.group,
     engR.group,
     engL.emitterAnchor,
-    engR.emitterAnchor
+    engR.emitterAnchor,
+    paint.tether
   );
   const updateEngineDynamics = createEngineDynamics(
     engL.group,
@@ -477,7 +478,8 @@ function buildFin(parent: THREE.Group, kitId: string, side: -1 | 1, mats: Mats):
 function buildEngine(
   kitId: string,
   side: -1 | 1,
-  mats: Mats
+  mats: Mats,
+  tetherColor = '#76cfff'
 ): {
   group: THREE.Group;
   exhaust: THREE.Mesh;
@@ -557,7 +559,7 @@ function buildEngine(
   const emitterLens = new THREE.Mesh(
     new THREE.SphereGeometry(dims.r * 0.105, 10, 8),
     new THREE.MeshBasicMaterial({
-      color: 0xaeeeff,
+      color: new THREE.Color(tetherColor),
       transparent: true,
       opacity: 0.95,
       depthWrite: false,
@@ -928,10 +930,16 @@ function buildEnergyTether(
   leftEngine: THREE.Group,
   rightEngine: THREE.Group,
   leftEmitter: THREE.Object3D,
-  rightEmitter: THREE.Object3D
+  rightEmitter: THREE.Object3D,
+  tetherColor = '#76cfff'
 ): (time: number, enabled: boolean) => void {
+  const base = new THREE.Color(tetherColor);
+  const coreColor = base.clone().lerp(new THREE.Color('#ffffff'), 0.45);
+  const arcHot = base.clone().lerp(new THREE.Color('#ffffff'), 0.25);
+  const arcCool = base.clone().multiplyScalar(0.72);
+
   const coreMat = new THREE.MeshBasicMaterial({
-    color: 0xc9f4ff,
+    color: coreColor,
     transparent: true,
     opacity: 0.9,
     depthWrite: false,
@@ -953,7 +961,7 @@ function buildEnergyTether(
     const attr = new THREE.BufferAttribute(new Float32Array(points * 3), 3);
     geometry.setAttribute('position', attr);
     const material = new THREE.LineBasicMaterial({
-      color: arcIndex === 1 ? 0x76cfff : 0xe2fbff,
+      color: arcIndex === 1 ? arcHot : arcCool,
       transparent: true,
       opacity: 0.8,
       depthWrite: false,
@@ -1494,11 +1502,11 @@ export function randomRivalBuild(seedIndex: number): CraftBuild {
   const hulls = Object.keys(HULL_KITS);
   const engines = Object.keys(ENGINE_KITS);
   const liveries = [
-    { primary: '#7a3030', secondary: '#2e2a26', stripe: '#e8d8b0' },
-    { primary: '#33556b', secondary: '#4a3720', stripe: '#ff8c2a' },
-    { primary: '#5b6d3a', secondary: '#3d4a52', stripe: '#f3e6d0' },
-    { primary: '#6b4d8a', secondary: '#26222e', stripe: '#ffd23e' },
-    { primary: '#8a7430', secondary: '#403a2c', stripe: '#9fd8ff' }
+    { primary: '#7a3030', secondary: '#2e2a26', stripe: '#e8d8b0', tether: '#ff6a3a' },
+    { primary: '#33556b', secondary: '#4a3720', stripe: '#ff8c2a', tether: '#76cfff' },
+    { primary: '#5b6d3a', secondary: '#3d4a52', stripe: '#f3e6d0', tether: '#9dff7a' },
+    { primary: '#6b4d8a', secondary: '#26222e', stripe: '#ffd23e', tether: '#d29bff' },
+    { primary: '#8a7430', secondary: '#403a2c', stripe: '#9fd8ff', tether: '#ffe08a' }
   ];
   const build = structuredClone(DEFAULT_BUILD);
   build.bricks.hull = pick(hulls, 0);
@@ -1507,6 +1515,6 @@ export function randomRivalBuild(seedIndex: number): CraftBuild {
   build.bricks.nose = pick(Object.keys({ cone: 1, ram: 1, sensor: 1 }), 2);
   build.bricks.finL = pick(Object.keys({ blade: 1, stub: 1, wing: 1 }), 1);
   build.bricks.finR = build.bricks.finL;
-  build.paint = liveries[seedIndex % liveries.length];
+  build.paint = { ...DEFAULT_BUILD.paint, ...liveries[seedIndex % liveries.length] };
   return build;
 }
