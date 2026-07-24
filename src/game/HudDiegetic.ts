@@ -29,6 +29,8 @@ export class HudDiegetic {
   private messageText = '';
   private messageColor = '#ffd9a0';
   private messageUntil = 0;
+  /** Hit target for pre-race engine ignition taps on the status display. */
+  readonly enginePanelMesh: THREE.Mesh;
 
   constructor(private track: Track) {
     this.group = new THREE.Group();
@@ -68,9 +70,9 @@ export class HudDiegetic {
     const mapDisplay = makeDisplay(0, 0.245, 0.255, 0);
     const gaugeDisplay = makeDisplay(0.35, 0.31, 0.235, -0.12);
 
-    engineDisplay.add(
-      this.engineCanvas.mesh(0.292, 0.1, { x: 0, y: 0, z: 0.032 })
-    );
+    this.enginePanelMesh = this.engineCanvas.mesh(0.292, 0.1, { x: 0, y: 0, z: 0.032 });
+    this.enginePanelMesh.userData.ignitionPanel = true;
+    engineDisplay.add(this.enginePanelMesh);
     mapDisplay.add(
       this.navCanvas.mesh(0.22, 0.22, { x: 0, y: 0, z: 0.032 })
     );
@@ -136,6 +138,9 @@ export class HudDiegetic {
       leftEngineExploded: boolean;
       rightEngineExploded: boolean;
       burnerActive: boolean;
+      /** Pre-race ignition; undefined means engines are already live. */
+      leftIgnited?: boolean;
+      rightIgnited?: boolean;
     }
   ): void {
     this.barLeft.set(data.thrustL, data.leftHeld ? '#ff8c2a' : '#5a4326');
@@ -169,7 +174,9 @@ export class HudDiegetic {
         data.engineHealthR,
         data.leftEngineExploded,
         data.rightEngineExploded,
-        data.burnerActive
+        data.burnerActive,
+        data.leftIgnited,
+        data.rightIgnited
       );
       if (this.messageText && performance.now() / 1000 > this.messageUntil) {
         this.messageText = '';
@@ -277,30 +284,42 @@ export class HudDiegetic {
     rightHealth: number,
     leftExploded: boolean,
     rightExploded: boolean,
-    burnerActive: boolean
+    burnerActive: boolean,
+    leftIgnited?: boolean,
+    rightIgnited?: boolean
   ): void {
     const { ctx, w, h } = this.engineCanvas;
     ctx.clearRect(0, 0, w, h);
     paintPanelBg(ctx, w, h);
 
+    const arming = leftIgnited !== undefined || rightIgnited !== undefined;
+
     ctx.textAlign = 'center';
     ctx.fillStyle = '#8f795a';
     ctx.font = 'bold 16px monospace';
-    ctx.fillText('TWIN ENGINE STATUS', w / 2, 19);
+    ctx.fillText(arming ? 'TAP ENGINES TO IGNITE' : 'TWIN ENGINE STATUS', w / 2, 19);
 
-    const healthColor = (health: number, exploded: boolean) => {
+    const healthColor = (health: number, exploded: boolean, ignited: boolean | undefined) => {
+      if (arming && ignited === false) return '#6a6258';
       if (exploded || health <= 0.32) return '#ff4a3a';
       if (health <= 0.66) return '#ffd23e';
       return '#62d676';
     };
 
-    const drawEngine = (cx: number, label: string, health: number, exploded: boolean) => {
-      const color = healthColor(health, exploded);
+    const drawEngine = (
+      cx: number,
+      label: string,
+      health: number,
+      exploded: boolean,
+      ignited: boolean | undefined
+    ) => {
+      const color = healthColor(health, exploded, ignited);
+      const cold = arming && ignited === false;
       ctx.save();
       ctx.translate(cx, 0);
 
       // Side-view engine silhouette: intake, cylindrical body, bands, nozzle.
-      ctx.fillStyle = exploded ? 'rgba(255,74,58,0.12)' : `${color}2b`;
+      ctx.fillStyle = exploded ? 'rgba(255,74,58,0.12)' : cold ? 'rgba(80,74,68,0.35)' : `${color}2b`;
       ctx.strokeStyle = color;
       ctx.lineWidth = 4;
       roundRect(ctx, -66, 44, 112, 48, 20);
@@ -336,14 +355,26 @@ export class HudDiegetic {
       ctx.fillStyle = '#251c16';
       ctx.fillRect(-86, 105, 162, 15);
       ctx.fillStyle = color;
-      ctx.fillRect(-84, 107, 158 * THREE.MathUtils.clamp(health, 0, 1), 11);
+      ctx.fillRect(
+        -84,
+        107,
+        158 * THREE.MathUtils.clamp(cold ? 0 : health, 0, 1),
+        11
+      );
       ctx.strokeStyle = '#8f795a';
       ctx.lineWidth = 2;
       ctx.strokeRect(-86, 105, 162, 15);
 
       ctx.fillStyle = color;
       ctx.font = 'bold 18px monospace';
-      ctx.fillText(`${label}  ${exploded ? 'DESTROYED' : `${Math.round(health * 100)}%`}`, -5, 141);
+      const status = cold
+        ? 'OFF — TAP'
+        : ignited === true && arming
+          ? 'ONLINE'
+          : exploded
+            ? 'DESTROYED'
+            : `${Math.round(health * 100)}%`;
+      ctx.fillText(`${label}  ${status}`, -5, 141);
 
       if (exploded) {
         ctx.lineWidth = 7;
@@ -357,16 +388,21 @@ export class HudDiegetic {
       ctx.restore();
     };
 
-    drawEngine(135, 'LEFT', leftHealth, leftExploded);
-    drawEngine(382, 'RIGHT', rightHealth, rightExploded);
+    drawEngine(135, 'LEFT', leftHealth, leftExploded, leftIgnited);
+    drawEngine(382, 'RIGHT', rightHealth, rightExploded, rightIgnited);
 
-    if (burnerActive) {
+    if (burnerActive && !arming) {
       ctx.fillStyle = '#ff8c2a';
       ctx.font = 'bold 17px monospace';
       ctx.fillText('Y  BURNER ACTIVE', w / 2, 165);
     }
 
     this.engineCanvas.commit();
+  }
+
+  /** Map a UV hit on the engine panel to left/right ignition. */
+  ignitionSideFromUv(uv: THREE.Vector2): 'left' | 'right' {
+    return uv.x < 0.5 ? 'left' : 'right';
   }
 
   private drawMessage(): void {

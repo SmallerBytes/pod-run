@@ -1,15 +1,15 @@
 /**
  * Procedural audio: twin thruster voices (saw + filtered noise), a dedicated
- * afterburner rumble, UI beeps, crash bursts, and an overheat warble.
+ * afterburner rumble, UI beeps, crash bursts, and an overheat beep-beep alert.
  * No licensed audio anywhere.
  */
 export class AudioEngine {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private voices: ThrusterVoice[] = [];
-  private warnOsc: OscillatorNode | null = null;
-  private warnGain: GainNode | null = null;
   private burner: BurnerVoice | null = null;
+  private overheatActive = false;
+  private overheatBeepTimer = 0;
 
   start(): void {
     if (this.ctx) {
@@ -23,15 +23,19 @@ export class AudioEngine {
 
     this.voices = [new ThrusterVoice(this.ctx, this.master, -0.5), new ThrusterVoice(this.ctx, this.master, 0.5)];
     this.burner = new BurnerVoice(this.ctx, this.master);
+  }
 
-    // overheat warble (silent until enabled) — high chirp, not the burner
-    this.warnOsc = this.ctx.createOscillator();
-    this.warnOsc.type = 'square';
-    this.warnOsc.frequency.value = 880;
-    this.warnGain = this.ctx.createGain();
-    this.warnGain.gain.value = 0;
-    this.warnOsc.connect(this.warnGain).connect(this.master);
-    this.warnOsc.start();
+  /** Call once per frame for repeating alerts (overheat beep pattern). */
+  update(dt: number): void {
+    if (!this.overheatActive) {
+      this.overheatBeepTimer = 0;
+      return;
+    }
+    this.overheatBeepTimer -= dt;
+    if (this.overheatBeepTimer <= 0) {
+      this.beep(880, 0.07, 0.2, 'square');
+      this.overheatBeepTimer = 0.34;
+    }
   }
 
   setThrust(left: number, right: number, speedFactor: number): void {
@@ -45,15 +49,14 @@ export class AudioEngine {
   }
 
   setOverheatWarning(active: boolean): void {
-    if (!this.ctx || !this.warnGain || !this.warnOsc) return;
-    const now = this.ctx.currentTime;
-    if (active) {
-      this.warnGain.gain.setTargetAtTime(0.05, now, 0.05);
-      this.warnOsc.frequency.setValueAtTime(880, now);
-      this.warnOsc.frequency.setValueAtTime(660, now + 0.15);
-    } else {
-      this.warnGain.gain.setTargetAtTime(0, now, 0.05);
-    }
+    this.overheatActive = active;
+    if (!active) this.overheatBeepTimer = 0;
+  }
+
+  /** Short ignition blip when a cold engine is tapped on. */
+  engineIgnite(): void {
+    this.beep(120, 0.18, 0.22, 'sawtooth');
+    setTimeout(() => this.beep(90, 0.28, 0.16, 'sawtooth'), 40);
   }
 
   beep(freq: number, duration = 0.12, volume = 0.2, type: OscillatorType = 'sine'): void {

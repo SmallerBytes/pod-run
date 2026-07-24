@@ -28,7 +28,9 @@ export interface SkiffRig {
     leftHealth: number,
     rightHealth: number,
     leftExploded: boolean,
-    rightExploded: boolean
+    rightExploded: boolean,
+    /** False while engines are cold / waiting for pre-race ignition. */
+    systemsLive?: boolean
   ) => void;
   /** Sliding throttle lever groups; userData = { homeZ, travel }. */
   leftLever: THREE.Group;
@@ -94,6 +96,8 @@ export function buildSkiffFromBuild(
   // ---------- engines + cables + tether ----------
   const engL = buildEngine(build.bricks.engineL, -1, mats);
   const engR = buildEngine(build.bricks.engineR, 1, mats);
+  engL.group.userData.ignitionSide = 'left';
+  engR.group.userData.ignitionSide = 'right';
   visual.add(engL.group, engR.group);
 
   const cableL = buildCable(visual, build.bricks.cableL, -1, engL.group, engL.length, engL.radius, mats);
@@ -1267,7 +1271,8 @@ function createEngineDynamics(
     leftHealth,
     rightHealth,
     leftExploded,
-    rightExploded
+    rightExploded,
+    systemsLive = true
   ) => {
     const step = Math.min(dt, 0.05);
     time += step;
@@ -1279,13 +1284,13 @@ function createEngineDynamics(
     engines.forEach((engine, index) => {
       const side = index === 0 ? -1 : 1;
       const phase = index === 0 ? 0 : 2.4;
-      const ownThrust = thrusts[index];
-      const otherThrust = thrusts[1 - index];
+      const ownThrust = systemsLive ? thrusts[index] : 0;
+      const otherThrust = systemsLive ? thrusts[1 - index] : 0;
       const exploded = index === 0 ? leftExploded : rightExploded;
 
       // Turbine has its own rotational inertia: throttle spins it up quickly,
       // while release lets it coast down instead of stopping instantly.
-      const targetTurbineSpeed = exploded ? 0 : 1.4 + ownThrust * 34;
+      const targetTurbineSpeed = !systemsLive || exploded ? 0 : 1.4 + ownThrust * 34;
       const turbineResponse = ownThrust > turbineSpeeds[index] / 34 ? 7 : 2.2;
       turbineSpeeds[index] = THREE.MathUtils.lerp(
         turbineSpeeds[index],
@@ -1338,13 +1343,13 @@ function createEngineDynamics(
 
     updateLeftCable(leftExploded, time);
     updateRightCable(rightExploded, time);
-    updateTether(time, !leftExploded && !rightExploded);
+    updateTether(time, systemsLive && !leftExploded && !rightExploded);
     updateLeftDamage(leftHealth, leftExploded, step, time);
     updateRightDamage(rightHealth, rightExploded, step, time);
   };
 
   // Initialize all flexible links before the first rendered frame.
-  update(0, 0, 0, 0, 0, 1, 1, false, false);
+  update(0, 0, 0, 0, 0, 1, 1, false, false, true);
   return update;
 }
 

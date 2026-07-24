@@ -50,6 +50,11 @@ export class GrabSystem {
   xHoldCompleted = false;
   private xWasHeldLong = false;
 
+  /** Controller target-ray taps queued on trigger press (pre-race ignition). */
+  private pendingTapRays: { origin: THREE.Vector3; direction: THREE.Vector3 }[] = [];
+  private tmpOrigin = new THREE.Vector3();
+  private tmpDir = new THREE.Vector3();
+
   private tmpVec = new THREE.Vector3();
   private tmpVec2 = new THREE.Vector3();
 
@@ -100,6 +105,15 @@ export class GrabSystem {
       });
       controller.addEventListener('squeezeend', () => {
         state.holding = false;
+      });
+      controller.addEventListener('selectstart', () => {
+        controller.getWorldPosition(this.tmpOrigin);
+        // XR target rays aim along local -Z (camera convention).
+        controller.getWorldDirection(this.tmpDir).negate();
+        this.pendingTapRays.push({
+          origin: this.tmpOrigin.clone(),
+          direction: this.tmpDir.clone().normalize()
+        });
       });
 
       this.hands.push(state);
@@ -247,6 +261,13 @@ export class GrabSystem {
       leftHeld,
       rightHeld
     };
+  }
+
+  /** Drain trigger-tap rays for pre-race engine ignition hit-tests. */
+  consumeIgnitionRays(): { origin: THREE.Vector3; direction: THREE.Vector3 }[] {
+    const rays = this.pendingTapRays;
+    this.pendingTapRays = [];
+    return rays;
   }
 
   /** Thruster-load rumble; call at ~10 Hz from the session. */

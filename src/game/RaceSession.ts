@@ -9,7 +9,7 @@ import { GrabSystem } from './GrabSystem';
 import { HudDiegetic } from './HudDiegetic';
 import { Track, ProgressTracker } from './TrackProgress';
 
-export type RaceState = 'idle' | 'countdown' | 'racing' | 'finished';
+export type RaceState = 'idle' | 'arming' | 'countdown' | 'racing' | 'finished';
 
 // Solo testing for now; restore rivals by raising this count.
 const AI_COUNT = 0;
@@ -18,6 +18,7 @@ interface InputProvider {
   getInput(): ThrustInput & { leftHeld: boolean; rightHeld: boolean };
   xHoldSeconds?: number;
   xHoldCompleted?: boolean;
+  consumeIgnitionRays?: () => { origin: THREE.Vector3; direction: THREE.Vector3 }[];
 }
 
 /**
@@ -42,6 +43,10 @@ export class RaceSession {
   private bumpCooldown = 0;
   private leftEngineWasExploded = false;
   private rightEngineWasExploded = false;
+  private leftIgnited = false;
+  private rightIgnited = false;
+  private readonly raycaster = new THREE.Raycaster();
+  private readonly ignitionHits: THREE.Object3D[] = [];
 
   constructor(
     private scene: THREE.Scene,
@@ -81,13 +86,13 @@ export class RaceSession {
   }
 
   begin(): void {
-    if (this.state === 'countdown' || this.state === 'racing') return;
+    if (this.state === 'arming' || this.state === 'countdown' || this.state === 'racing') return;
     this.restart();
   }
 
   restart(): void {
-    this.state = 'countdown';
-    this.countdownRemaining = 3.8;
+    this.state = 'arming';
+    this.countdownRemaining = 0;
     this.countdownStep = -1;
     this.raceTime = 0;
     this.lastPlace = 0;
@@ -95,7 +100,21 @@ export class RaceSession {
     this.finishPlace = 0;
     this.leftEngineWasExploded = false;
     this.rightEngineWasExploded = false;
+    this.leftIgnited = false;
+    this.rightIgnited = false;
     this.resetPlayer();
+    this.skiff.leftExhaust.visible = false;
+    this.skiff.rightExhaust.visible = false;
+    this.skiff.leftExhaust.scale.setScalar(0);
+    this.skiff.rightExhaust.scale.setScalar(0);
+    this.hud.showMessage('TAP ENGINES TO IGNITE', 8, '#ffd9a0');
+
+    this.ignitionHits.length = 0;
+    this.ignitionHits.push(
+      this.skiff.leftEngine,
+      this.skiff.rightEngine,
+      this.hud.enginePanelMesh
+    );
 
     for (let i = 0; i < this.rivals.length; i++) {
       const old = this.rivals[i];
@@ -105,6 +124,13 @@ export class RaceSession {
       this.rivals[i] = rival;
       this.scene.add(rival.group);
     }
+  }
+
+  private startCountdown(): void {
+    this.state = 'countdown';
+    this.countdownRemaining = 3.8;
+    this.countdownStep = -1;
+    this.hud.showMessage('ENGINES ONLINE', 1.1, '#6fce6f');
   }
 
   private resetPlayer(): void {
@@ -123,6 +149,21 @@ export class RaceSession {
 
     const rawInput = input.getInput();
 
+    if (this.state === 'arming') {
+      this.resolveIgnitionTaps(input);
+      if (this.leftIgnited && this.rightIgnited) {
+        this.startCountdown();
+      } else {
+        const waiting =
+          !this.leftIgnited && !this.rightIgnited
+            ? 'TAP ENGINES TO IGNITE'
+            : !this.leftIgnited
+              ? 'TAP LEFT ENGINE'
+              : 'TAP RIGHT ENGINE';
+        this.hud.showMessage(waiting, 0.4, '#ffd9a0');
+      }
+    }
+
     if (this.state === 'countdown') {
       this.countdownRemaining -= dt;
       const step = Math.ceil(this.countdownRemaining);
@@ -139,7 +180,9 @@ export class RaceSession {
     }
 
     const racing = this.state === 'racing';
-    const frozen = this.state === 'countdown' || this.state === 'finished';
+    const systemsLive = this.state !== 'arming' && this.leftIgnited && this.rightIgnited;
+    const frozen =
+      this.state === 'arming' || this.state === 'countdown' || this.state === 'finished';
 
     if (racing) this.raceTime += dt;
 
@@ -219,36 +262,56 @@ export class RaceSession {
     // FX + audio + haptics
     const speedFactor = this.controller.speed / Math.max(1, this.controller.stats.topSpeed);
     this.dust.update(dt, this.controller.position, this.controller.yaw, this.controller.speed);
-    this.audio.setThrust(this.controller.effLeft, this.controller.effRight, speedFactor);
-    this.audio.setBurner(this.controller.burnerActive);
-    this.audio.setOverheatWarning(this.controller.heat > 0.85);
+    this.audio.setThrust(
+      systemsLive ? this.controller.effLeft : 0,
+      systemsLive ? this.controller.effRight : 0,
+      systemsLive ? speedFactor : 0
+    );
+    this.audio.setBurner(systemsLive && this.controller.burnerActive);
+    this.audio.setOverheatWarning(systemsLive && this.controller.heat > 0.85);
+    this.audio.update(dt);
 
     this.rumbleTimer += dt;
     if (this.rumbleTimer > 0.1) {
       this.rumbleTimer = 0;
-      this.grab?.rumbleThrust(this.controller.effLeft, this.controller.effRight);
+      if (systemsLive) {
+        this.grab?.rumbleThrust(this.controller.effLeft, this.controller.effRight);
+      }
     }
 
-    // exhaust glow scales with thrust
-    const burnerFlame = this.controller.burnerActive ? 0.85 : 0;
-    const scaleL =
-      0.4 + this.controller.effLeft * 1.1 +
-      (this.controller.overdriveActive ? 0.5 : 0) + burnerFlame;
-    const scaleR =
-      0.4 + this.controller.effRight * 1.1 +
-      (this.controller.overdriveActive ? 0.5 : 0) + burnerFlame;
-    this.skiff.leftExhaust.scale.set(scaleL, scaleL, scaleL);
-    this.skiff.rightExhaust.scale.set(scaleR, scaleR, scaleR);
+    // Exhaust stays dark until each engine is ignited.
+    const burnerFlame = systemsLive && this.controller.burnerActive ? 0.85 : 0;
+    if (this.leftIgnited) {
+      this.skiff.leftExhaust.visible = true;
+      const scaleL =
+        0.4 + this.controller.effLeft * 1.1 +
+        (this.controller.overdriveActive ? 0.5 : 0) + burnerFlame;
+      this.skiff.leftExhaust.scale.set(scaleL, scaleL, scaleL);
+    } else {
+      this.skiff.leftExhaust.visible = false;
+      this.skiff.leftExhaust.scale.setScalar(0);
+    }
+    if (this.rightIgnited) {
+      this.skiff.rightExhaust.visible = true;
+      const scaleR =
+        0.4 + this.controller.effRight * 1.1 +
+        (this.controller.overdriveActive ? 0.5 : 0) + burnerFlame;
+      this.skiff.rightExhaust.scale.set(scaleR, scaleR, scaleR);
+    } else {
+      this.skiff.rightExhaust.visible = false;
+      this.skiff.rightExhaust.scale.setScalar(0);
+    }
     this.skiff.updateEngineDynamics(
       dt,
       this.controller.speed,
       this.controller.yawRate,
-      this.controller.effLeft,
-      this.controller.effRight,
+      systemsLive ? this.controller.effLeft : 0,
+      systemsLive ? this.controller.effRight : 0,
       this.controller.leftEngineHealthFraction,
       this.controller.rightEngineHealthFraction,
       this.controller.leftEngineExploded,
-      this.controller.rightEngineExploded
+      this.controller.rightEngineExploded,
+      systemsLive
     );
 
     // desktop: animate the levers from the keyboard ramps (VR hands drive
@@ -282,13 +345,58 @@ export class RaceSession {
       engineHealthR: this.controller.rightEngineHealthFraction,
       leftEngineExploded: this.controller.leftEngineExploded,
       rightEngineExploded: this.controller.rightEngineExploded,
-      burnerActive: this.controller.burnerActive
+      burnerActive: this.controller.burnerActive,
+      leftIgnited: this.state === 'arming' ? this.leftIgnited : undefined,
+      rightIgnited: this.state === 'arming' ? this.rightIgnited : undefined
     });
 
     // restart after finish
     if (this.state === 'finished' && restartPressed) {
       this.restart();
     }
+  }
+
+  private resolveIgnitionTaps(input: InputProvider): void {
+    const rays = input.consumeIgnitionRays?.() ?? [];
+    if (rays.length === 0) return;
+
+    for (const ray of rays) {
+      this.raycaster.set(ray.origin, ray.direction);
+      this.raycaster.far = 40;
+      const hits = this.raycaster.intersectObjects(this.ignitionHits, true);
+      for (const hit of hits) {
+        const side = this.ignitionSideFromHit(hit);
+        if (!side) continue;
+        if (side === 'left' && !this.leftIgnited) {
+          this.leftIgnited = true;
+          this.skiff.leftExhaust.visible = true;
+          this.skiff.leftExhaust.scale.setScalar(0.55);
+          this.audio.engineIgnite();
+          this.grab?.crashRumble();
+        } else if (side === 'right' && !this.rightIgnited) {
+          this.rightIgnited = true;
+          this.skiff.rightExhaust.visible = true;
+          this.skiff.rightExhaust.scale.setScalar(0.55);
+          this.audio.engineIgnite();
+          this.grab?.crashRumble();
+        }
+        break;
+      }
+    }
+  }
+
+  private ignitionSideFromHit(hit: THREE.Intersection): 'left' | 'right' | null {
+    let obj: THREE.Object3D | null = hit.object;
+    while (obj) {
+      if (obj.userData.ignitionSide === 'left' || obj.userData.ignitionSide === 'right') {
+        return obj.userData.ignitionSide;
+      }
+      if (obj.userData.ignitionPanel && hit.uv) {
+        return this.hud.ignitionSideFromUv(hit.uv);
+      }
+      obj = obj.parent;
+    }
+    return null;
   }
 
   private finishRace(): void {
