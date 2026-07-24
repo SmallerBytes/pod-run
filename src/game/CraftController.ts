@@ -374,6 +374,55 @@ export class CraftController {
     this.heat = Math.min(this.heat, 0.4);
   }
 
+  /**
+   * Continuous field repair while X is held. From empty, a full hold of
+   * ~5 seconds restores hull + both engines; releasing pauses progress.
+   * Returns true the frame everything reaches full health.
+   */
+  repairTick(dt: number): boolean {
+    const before =
+      this.hullFraction >= 1 &&
+      this.leftEngineHealthFraction >= 1 &&
+      this.rightEngineHealthFraction >= 1 &&
+      !this.leftEngineExploded &&
+      !this.rightEngineExploded &&
+      !this.limpMode;
+
+    // ~5 seconds from wrecked to pristine.
+    const hullRate = this.stats.hullMax / 5;
+    const engineRate = 100 / 5;
+    this.hull = Math.min(this.stats.hullMax, this.hull + hullRate * dt);
+    this.engineHealthLeft = Math.min(100, this.engineHealthLeft + engineRate * dt);
+    this.engineHealthRight = Math.min(100, this.engineHealthRight + engineRate * dt);
+
+    // An exploded engine comes back online as soon as it has any integrity.
+    if (this.engineHealthLeft > 0.5) this.leftEngineExploded = false;
+    if (this.engineHealthRight > 0.5) this.rightEngineExploded = false;
+    if (this.hull > 0) this.limpMode = false;
+    this.heat = Math.max(0, this.heat - 0.12 * dt);
+
+    const after =
+      this.hullFraction >= 1 &&
+      this.leftEngineHealthFraction >= 1 &&
+      this.rightEngineHealthFraction >= 1 &&
+      !this.leftEngineExploded &&
+      !this.rightEngineExploded &&
+      !this.limpMode;
+    return !before && after;
+  }
+
+  /** True when hull and both engines are fully healthy. */
+  get isFullyRepaired(): boolean {
+    return (
+      this.hullFraction >= 1 &&
+      this.leftEngineHealthFraction >= 1 &&
+      this.rightEngineHealthFraction >= 1 &&
+      !this.leftEngineExploded &&
+      !this.rightEngineExploded &&
+      !this.limpMode
+    );
+  }
+
   get leftEngineHealthFraction(): number {
     return this.engineHealthLeft / 100;
   }

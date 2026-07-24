@@ -213,7 +213,7 @@ export class GrabSystem {
     this.aWasDown = aDown;
     this.aButtonPressed = aDown;
 
-    // X (left) hold-to-repair — 5 continuous seconds
+    // X (left) hold-to-repair — continuous while held
     if (xDown) this.xHoldSeconds += dt;
     else this.xHoldSeconds = 0;
     const heldLong = this.xHoldSeconds >= 5;

@@ -5,7 +5,7 @@ import { ThrustInput } from './CraftController';
  * Desktop fallback for iterating without a headset:
  * hold Q = push left throttle / turn right, P = push right throttle / turn left,
  * hold both for straight-line power (release to ease off), Shift = overdrive,
- * Y toggles engine burner, hold X for 5s = repair engines,
+ * Y toggles engine burner, hold X to gradually repair engines,
  * mouse (pointer lock) = look around the pod, R = restart after finish.
  * During pre-race arming, Q / P "touch" the matching engine to ignite.
  */

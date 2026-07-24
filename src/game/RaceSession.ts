@@ -217,20 +217,34 @@ export class RaceSession {
     }
     this.lastPlace = place;
 
-    // limp-mode / repair (hold X for 5s)
+    // limp-mode / repair — hold X to gradually restore hull + engines
     const xHold = input.xHoldSeconds ?? 0;
-    const xDone = !!input.xHoldCompleted;
     const leftJustExploded =
       this.controller.leftEngineExploded && !this.leftEngineWasExploded;
     const rightJustExploded =
       this.controller.rightEngineExploded && !this.rightEngineWasExploded;
-    const engineDamaged =
+    const needsRepair =
+      this.controller.limpMode ||
+      this.controller.hullFraction < 1 ||
       this.controller.leftEngineHealthFraction < 1 ||
-      this.controller.rightEngineHealthFraction < 1;
-    if (racing && xDone) {
-      this.controller.repairEngines();
-      this.hud.showMessage('ENGINES REPAIRED', 2, '#6fce6f');
-      this.audio.lapDing();
+      this.controller.rightEngineHealthFraction < 1 ||
+      this.controller.leftEngineExploded ||
+      this.controller.rightEngineExploded;
+    if (racing && xHold > 0 && needsRepair) {
+      const justFinished = this.controller.repairTick(dt);
+      if (justFinished) {
+        this.hud.showMessage('ENGINES REPAIRED', 2, '#6fce6f');
+        this.audio.lapDing();
+      } else {
+        const progress = Math.round(
+          ((this.controller.hullFraction +
+            this.controller.leftEngineHealthFraction +
+            this.controller.rightEngineHealthFraction) /
+            3) *
+            100
+        );
+        this.hud.showMessage(`REPAIRING ${progress}%`, 0.35, '#9fd8ff');
+      }
     } else if (racing && (leftJustExploded || rightJustExploded)) {
       const side = leftJustExploded && rightJustExploded
         ? 'BOTH ENGINES'
@@ -240,18 +254,11 @@ export class RaceSession {
       this.hud.showMessage(`${side} DESTROYED`, 2.4, '#ff4a3a');
     } else if (
       racing &&
-      xHold > 0.15 &&
-      (this.controller.limpMode || this.controller.hullFraction < 1 || engineDamaged)
-    ) {
-      const secs = Math.min(5, Math.ceil(5 - xHold));
-      this.hud.showMessage(`REPAIR ${secs}s`, 0.35, '#9fd8ff');
-    } else if (
-      racing &&
       (this.controller.leftEngineExploded || this.controller.rightEngineExploded)
     ) {
-      this.hud.showMessage('ENGINE LOST — HOLD X 5s', 1.2, '#ff4a3a');
+      this.hud.showMessage('ENGINE LOST — HOLD X TO REPAIR', 1.2, '#ff4a3a');
     } else if (racing && this.controller.limpMode) {
-      this.hud.showMessage('HULL CRITICAL — HOLD X 5s', 1.2, '#ff4a3a');
+      this.hud.showMessage('HULL CRITICAL — HOLD X TO REPAIR', 1.2, '#ff4a3a');
     }
     this.leftEngineWasExploded = this.controller.leftEngineExploded;
     this.rightEngineWasExploded = this.controller.rightEngineExploded;
